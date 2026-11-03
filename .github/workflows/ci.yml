@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: opsassist_owner
+          POSTGRES_PASSWORD: dev_owner_password
+          POSTGRES_DB: opsassist_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U opsassist_owner"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.28"
+      - run: uv sync --frozen --extra anthropic
+      - name: Create application role
+        run: |
+          docker exec "$(docker ps -q --filter ancestor=pgvector/pgvector:pg17)" psql -U opsassist_owner -d opsassist_test \
+            -c "CREATE ROLE opsassist_app LOGIN PASSWORD 'dev_app_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest -q
+      - name: Retrieval and permission evaluation
+        run: uv run python -m evals.run_rag_eval --min-recall 0.7 --require-no-leaks
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
