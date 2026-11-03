@@ -2,8 +2,9 @@
 
 Auditable AI operations platform. This repository currently implements **Phases 0 to 2**: the
 foundation plus one vertical slice: *ask a question over approved documents and get a cited,
-permission-filtered answer*. MCP tools, approvals and external integrations are designed but not
-built. See `docs/IMPLEMENTATION_PLAN.md` and `docs/PROGRESS.md`.
+permission-filtered answer*. A read-only tool layer for MCP servers exists through the API, tested
+against a mock server. GitHub, email, the planner and approvals are designed but not built. See
+`docs/IMPLEMENTATION_PLAN.md` and `docs/PROGRESS.md`.
 
 ## Prerequisites
 
@@ -76,6 +77,7 @@ backend/src/opsassist/
   assistant/    Prompt assembly, citation validation, answer pipeline.
   llm/          Provider protocols and adapters (Ollama, Anthropic, hash).
   jobs/         Durable Postgres queue and worker.
+  tools/        Tool registry, review, gateway, MCP provider. Writes are refused until Phase 4.
   models.py     Schema. migrations/ holds the Alembic history.
 backend/evals/  RAG evaluation corpus and runner.
 backend/tests/  unit, integration, security (cross-tenant, cross-user, injection).
