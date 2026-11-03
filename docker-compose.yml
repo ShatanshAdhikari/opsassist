@@ -1,0 +1,66 @@
+# Local development stack. Development-only credentials: never reuse in production.
+# Host port 5433 avoids clashing with a locally installed PostgreSQL on 5432.
+name: opsassist
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: opsassist_owner
+      POSTGRES_PASSWORD: dev_owner_password
+      POSTGRES_DB: opsassist
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opsassist_owner -d opsassist"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # `docker compose --profile app up --build` runs the full backend in containers.
+  migrate:
+    profiles: ["app"]
+    build: ./backend
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://opsassist_app:dev_app_password@db:5432/opsassist
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://opsassist_owner:dev_owner_password@db:5432/opsassist
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    profiles: ["app"]
+    build: ./backend
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://opsassist_app:dev_app_password@db:5432/opsassist
+      BLOB_DIR: /var/opsassist/blobs
+      OLLAMA_URL: http://host.docker.internal:11434
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - blob_data:/var/opsassist/blobs
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    profiles: ["app"]
+    build: ./backend
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://opsassist_app:dev_app_password@db:5432/opsassist
+      BLOB_DIR: /var/opsassist/blobs
+      OLLAMA_URL: http://host.docker.internal:11434
+    command: ["opsassist", "worker"]
+    volumes:
+      - blob_data:/var/opsassist/blobs
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+volumes:
+  db_data:
+  blob_data:
