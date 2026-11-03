@@ -46,7 +46,8 @@ _PASSWORD_HASH = hash_password(PASSWORD)
 _TRUNCATE = """
     TRUNCATE organizations, users, sessions, audit_events, jobs, workspaces, memberships, groups,
     group_members, knowledge_sources, source_grants, documents, document_versions, chunks,
-    conversations, messages, usage_records, tool_servers, tool_definitions, tool_invocations CASCADE
+    conversations, messages, usage_records, tool_servers, tool_definitions, tool_invocations,
+    integration_connections, stored_credentials CASCADE
 """
 
 

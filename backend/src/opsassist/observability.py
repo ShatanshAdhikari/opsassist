@@ -38,6 +38,17 @@ def redact_secrets(text: str) -> str:
     return text
 
 
+def redact_tree(value: Any) -> Any:
+    """Redact every string inside decoded JSON."""
+    if isinstance(value, str):
+        return redact_secrets(value)
+    if isinstance(value, dict):
+        return {key: redact_tree(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_tree(item) for item in value]
+    return value
+
+
 def _redact_event(
     _logger: Any, _method: str, event_dict: MutableMapping[str, Any]
 ) -> MutableMapping[str, Any]:

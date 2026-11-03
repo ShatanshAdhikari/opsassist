@@ -125,3 +125,35 @@ action run with no approval step, which the brief forbids.
 
 **Consequences.** Phase 4 has one place to change. Admin classification of a tool as read remains a
 trust decision: see `SECURITY_MODEL.md` section 10.
+
+## ADR-0011: Envelope-encrypted credentials in PostgreSQL
+
+**Decision.** AES-256-GCM per secret, with data keys wrapped by a key-encryption key from deployment
+configuration. Behind a `CredentialStore` class.
+
+**Alternatives.**
+- Secrets manager or KMS (Vault, AWS KMS): stronger, with audit and access control on the key
+  itself, but needs infrastructure the deployment has not chosen. This is the production direction.
+- pgcrypto: the key would pass through SQL, where it can reach logs and statements.
+- Single encryption without envelopes: rotation would have to re-encrypt every secret.
+
+**Consequences.** Works with no new infrastructure, and credentials share RLS and transactions with
+their connection. The key is an environment variable, so the protection is against database-only
+exposure, not against someone who also has the process environment. Losing the key means re-entering
+credentials, so it needs its own backup.
+
+## ADR-0012: GitHub access is a workspace decision for now
+
+**Decision.** Use a GitHub App with an admin-chosen repository list per connection. Any member with
+`tools:invoke` can read those repositories. Do not check each person's own GitHub access yet.
+
+**Alternatives.**
+- Linked per-user OAuth, checking access on every call: correct for repositories with different
+  audiences, but it needs an OAuth flow and token refresh, and users without linked accounts get
+  nothing. The original design called for this before shipping.
+- Personal access tokens: simple, but tied to one person, with long-lived broad access.
+
+**Consequences.** This departs from the original design and is a real limit: a member can read a
+private repository they could not open on GitHub, if an admin put it on the connection. It is
+documented in `GITHUB_SETUP.md`. **Add per-person checks before any workspace needs repositories
+with different audiences.** This ADR needs the owner's explicit agreement.
