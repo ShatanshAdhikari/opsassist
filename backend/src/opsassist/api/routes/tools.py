@@ -34,6 +34,8 @@ class RegisterServerRequest(RequestBody):
 
     @model_validator(mode="after")
     def _target_matches_kind(self) -> RegisterServerRequest:
+        if self.kind is ServerKind.GITHUB:
+            raise ValueError("GitHub servers are created through /connections/github")
         needs_url = self.kind is ServerKind.MCP_HTTP
         if needs_url != (self.url is not None) or needs_url == (self.stdio_name is not None):
             raise ValueError("mcp_http takes url; mcp_stdio takes stdio_name")

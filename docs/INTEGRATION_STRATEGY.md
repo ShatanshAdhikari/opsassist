@@ -1,8 +1,9 @@
 # Integration Strategy
 
 Status, 2026-11-04: the tool layer in sections 1, 5 and 6 is built (`backend/src/opsassist/tools/`),
-with MCP over HTTP and stdio. It has been exercised only against a mock server. **No real
-integration exists**: GitHub, email, calendar and credentials below are still design. Section 6
+with MCP over HTTP and stdio, tested against a mock server. Credentials (section 4) and read-only
+GitHub (section 3) are built, and tested against a fake GitHub until the live test in
+`GITHUB_SETUP.md` has been run: see `PROGRESS.md`. Email and calendar are still design. Section 6
 marks what differs from the original plan.
 
 ## 1. One contract, two transports
@@ -53,7 +54,9 @@ may be used for on-demand reads.
 ### GitHub, read-only (Phase 3)
 - Auth: **GitHub App** with per-repository installation, not a personal token. Permissions: `metadata:read, contents:read, issues:read, pull_requests:read, checks:read`.
 - Why: per-repo scoping, short-lived installation tokens, higher rate limits.
-- Acting-user check: an installation token sees everything installed, so the gateway must also verify the *requesting user's* repo access via their linked OAuth identity. Otherwise a user could read a private repo through the app. This is a design risk to validate before shipping.
+- Tools: `issues_search`, `issue_get`, `pulls_list`, `pull_get`, `file_get`. A native provider, reviewed and pinned like any MCP tool.
+- Scoping is layered: tokens are requested read-only and limited to the connection's repositories; a repository outside the list is refused before any request; search refuses `repo:`, `org:`, `user:` and `owner:`, and drops results from elsewhere; redirects are not followed.
+- **Per-person access is not checked.** An installation token sees everything installed, so any member with `tools:invoke` can read every repository on the connection. An admin choosing the list is the control today (ADR-0012). Checking each person's access through a linked GitHub identity is planned before this suits private repositories with different audiences.
 - Live state (PR status, checks) always comes from the API, never the index. Writes join in Phase 4 as separate tools at Level 2 or 3.
 
 ### Email, read-only (Phase 3)
@@ -64,9 +67,12 @@ may be used for on-demand reads.
 
 ## 4. Credentials
 
-`integration_connections` holds metadata and a `credential_ref`. Tokens live in an
-encrypted store behind a `CredentialStore` interface. Refresh, rotation and revocation
-are part of the connector's definition of done.
+Built. `integration_connections` holds settings and a `credential_id`. Secrets live in
+`stored_credentials`, encrypted with a per-secret key wrapped by a key from deployment
+configuration (ADR-0011). Installation tokens stay in memory only. Replacing a key, rotating the
+encryption key and deleting a connection all exist: see `GITHUB_SETUP.md`.
+
+Refresh and revocation for OAuth providers such as Gmail are not built.
 
 ## 5. Reliability contract
 

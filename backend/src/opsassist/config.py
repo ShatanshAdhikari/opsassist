@@ -90,6 +90,13 @@ class Settings(BaseSettings):
     tool_allowed_private_hosts: list[str] = []
     mcp_stdio_servers: dict[str, McpStdioServer] = {}
 
+    # Base64 keys encrypting stored credentials, by id. Keep an old key until
+    # `opsassist rotate-credential-keys` has moved everything to the active one.
+    credential_keys: dict[str, SecretStr] = {}
+    credential_active_key_id: str | None = None
+    github_api_url: str = "https://api.github.com"
+    github_max_response_bytes: int = 10 * 1024 * 1024
+
     @model_validator(mode="after")
     def _check_production_safety(self) -> Settings:
         if self.environment == "production" and not self.cookie_secure:

@@ -18,6 +18,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -351,6 +352,45 @@ class Chunk(Base):
     )
 
 
+# --- Connections and credentials (RLS by workspace) --------------------------------------
+
+
+class StoredCredential(Base):
+    """Encrypted secret material. No API response model reads this table.
+
+    Only ciphertext is here: decryption also needs a key held in deployment configuration.
+    """
+
+    __tablename__ = "stored_credentials"
+
+    id: Mapped[uuid.UUID] = _pk()
+    workspace_id: Mapped[uuid.UUID] = _fk("workspaces.id")
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    wrapped_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    wrapped_key_nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class IntegrationConnection(Base):
+    """A workspace's link to an external system. `config` holds settings, never secrets."""
+
+    __tablename__ = "integration_connections"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+
+    id: Mapped[uuid.UUID] = _pk()
+    workspace_id: Mapped[uuid.UUID] = _fk("workspaces.id")
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    credential_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[uuid.UUID | None] = _fk("users.id", nullable=True, ondelete="SET NULL")
+    created_at: Mapped[datetime] = _created_at()
+
+
 # --- Tools (RLS by workspace) -----------------------------------------------------------
 
 
@@ -359,8 +399,12 @@ class ToolServer(Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", "slug"),
         CheckConstraint(
-            "(kind = 'mcp_http' AND url IS NOT NULL AND stdio_name IS NULL) OR "
-            "(kind = 'mcp_stdio' AND stdio_name IS NOT NULL AND url IS NULL)",
+            "(kind = 'mcp_http' AND url IS NOT NULL AND stdio_name IS NULL "
+            "AND connection_id IS NULL) OR "
+            "(kind = 'mcp_stdio' AND stdio_name IS NOT NULL AND url IS NULL "
+            "AND connection_id IS NULL) OR "
+            "(kind = 'github' AND connection_id IS NOT NULL AND url IS NULL "
+            "AND stdio_name IS NULL)",
             name="target_matches_kind",
         ),
     )
@@ -372,6 +416,7 @@ class ToolServer(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     url: Mapped[str | None] = mapped_column(String(2000))
     stdio_name: Mapped[str | None] = mapped_column(String(100))
+    connection_id: Mapped[uuid.UUID | None] = _fk("integration_connections.id", nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     health: Mapped[str] = mapped_column(String(20), nullable=False)
     last_error_code: Mapped[str | None] = mapped_column(String(50))

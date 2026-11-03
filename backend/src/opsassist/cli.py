@@ -15,7 +15,8 @@ from sqlalchemy import func, select
 from opsassist.audit import record_event
 from opsassist.config import get_settings
 from opsassist.container import build_container
-from opsassist.db import SessionFactory, global_scope
+from opsassist.credentials.crypto import generate_key
+from opsassist.db import SessionFactory, global_scope, tenant_scope
 from opsassist.identity.service import hash_password
 from opsassist.jobs.worker import JobHandler, Worker
 from opsassist.knowledge.ingestion import INGEST_JOB_KIND, IngestHandler
@@ -75,6 +76,30 @@ async def _create_user_command(args: argparse.Namespace) -> None:
         await container.close()
 
 
+async def _rotate_credential_keys() -> None:
+    """Idempotent. One transaction per workspace, so a failure leaves the rest consistent."""
+    container = build_container(get_settings())
+    try:
+        factory = container.session_factory
+        async with global_scope(factory) as session:
+            workspace_ids = list(await session.scalars(select(Workspace.id)))
+        total = 0
+        for workspace_id in workspace_ids:
+            async with tenant_scope(factory, workspace_id) as session:
+                moved = await container.credentials.rotate_workspace(session)
+                if moved:
+                    record_event(
+                        session,
+                        "credential.rotate_keys",
+                        workspace_id=workspace_id,
+                        metadata={"moved": moved},
+                    )
+                total += moved
+        print(f"Re-wrapped {total} credentials. Remove an old key only once this reports 0.")
+    finally:
+        await container.close()
+
+
 async def _run_worker() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -117,6 +142,11 @@ def main() -> None:
     create_user.add_argument("--name", required=True)
     create_user.add_argument("--password-env", help="Environment variable holding the password")
 
+    commands.add_parser("generate-credential-key", help="Print a new base64 encryption key")
+    commands.add_parser(
+        "rotate-credential-keys", help="Re-wrap stored credentials under the active key"
+    )
+
     args = parser.parse_args()
     if args.command == "worker":
         with contextlib.suppress(KeyboardInterrupt):
@@ -125,6 +155,10 @@ def main() -> None:
         asyncio.run(_bootstrap(args))
     elif args.command == "create-user":
         asyncio.run(_create_user_command(args))
+    elif args.command == "generate-credential-key":
+        print(generate_key())
+    elif args.command == "rotate-credential-keys":
+        asyncio.run(_rotate_credential_keys())
 
 
 if __name__ == "__main__":

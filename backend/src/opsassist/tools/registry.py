@@ -57,6 +57,8 @@ def server_config(server: ToolServer) -> ServerConfig:
         kind=ServerKind(server.kind),
         url=server.url,
         stdio_name=server.stdio_name,
+        workspace_id=server.workspace_id,
+        connection_id=server.connection_id,
     )
 
 

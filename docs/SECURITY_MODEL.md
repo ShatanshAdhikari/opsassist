@@ -5,7 +5,7 @@ Status: draft for review, 2026-11-03. Each control is marked **[built]** or
 
 ## 1. Assets
 
-Organizational documents and chunks; provider credentials *(none stored yet)*;
+Organizational documents and chunks; provider credentials (GitHub App private keys, encrypted);
 sessions and password hashes; audit trail; the ability to read from registered tool servers;
 the ability to act on external systems *(none yet: write tools are refused)*.
 
@@ -85,7 +85,9 @@ no network by default.
 - [built] Log processor redacts sensitive keys and token-like values. Document content and questions are not logged.
 - [built] SQL bound parameters are hidden from database error messages, since they can hold document text.
 - [built] Failed-ingestion messages shown to users are fixed text or describe the file. Internal errors stay on the job row.
-- [planned] Encrypted credential storage with envelope encryption and rotation for OAuth tokens; or a secrets manager. No raw tokens in ordinary tables.
+- [built] Credentials use envelope encryption: AES-256-GCM with a per-secret key, wrapped by a key from deployment configuration that never enters the database. Associated data binds each secret to its workspace and row, so a row copied elsewhere will not decrypt. Key rotation re-wraps without decrypting secrets to callers.
+- [built] No API response includes a secret, and audit metadata and logs do not either. Installation tokens are held in memory only.
+- [planned] OAuth token refresh, and a secrets manager as an alternative behind `CredentialStore`. Limitation: encryption keys are environment variables, so anyone with the process environment and a database copy can decrypt. A KMS would narrow that.
 
 ## 9. Audit, retention, compliance
 
@@ -116,8 +118,16 @@ only from an authenticated person through the API.
 - [built] Invocation log stores hashes, sizes and outcomes, never arguments or output, and the app role cannot delete it. Denied calls are recorded too.
 - [built] Timeout, retries for reads, per-user rate limit, per-server circuit breaker. Limiter and breaker state are per process.
 
+GitHub specifically:
+
+- [built] Tokens are requested read-only and limited to the connection's repositories, so a bug above this layer still cannot write. The fake GitHub verifies the request. Real behaviour is checked by the live test once run.
+- [built] Repository allowlist enforced before any request, search scope qualifiers refused, results from other repositories dropped, redirects not followed, path and ref validated, response size capped while reading.
+- [built] Issue, PR and file content is returned marked untrusted, secret-redacted and clipped.
+- [built] Unreadable check status is reported as unknown, never as passing.
+
 Known gaps:
 
+1. **Any member with `tools:invoke` can read every repository on a GitHub connection**, whatever their own GitHub access (ADR-0012). List only repositories the whole workspace may read.
 1. **Admins decide what "read" means.** The platform cannot tell whether a tool really is read-only. An admin who classifies a write tool as Level 0 read makes it callable. Review is the control.
 2. **DNS rebinding:** the policy check and the connection resolve the name separately. Use network-level egress rules in production.
 3. **Hostile server memory use:** output limits apply after the response is received, and the SDK does not cap JSON response size. A hostile HTTP server could exhaust memory, so register only servers you trust that far.
@@ -126,7 +136,8 @@ Known gaps:
 6. A crash mid-call leaves an invocation at `running`. It is visible but nothing reconciles it.
 7. Stdio servers are a deployment-wide list, so any workspace admin can register a configured one.
 
-Planned: per-server credentials in an encrypted store (next); scheduled re-discovery with alerts;
+Planned: credentials for MCP servers (only native GitHub uses the store today); per-person GitHub
+access checks; scheduled re-discovery with alerts;
 treating tool output as tainted in the orchestrator, so a plan derived from it cannot auto-execute.
 
 ## 11. Known gaps at this milestone

@@ -23,6 +23,7 @@ class ReviewStatus(StrEnum):
 class ServerKind(StrEnum):
     MCP_HTTP = "mcp_http"
     MCP_STDIO = "mcp_stdio"
+    GITHUB = "github"
 
 
 class ServerHealth(StrEnum):
@@ -97,6 +98,8 @@ class ServerConfig:
     kind: ServerKind
     url: str | None
     stdio_name: str | None
+    workspace_id: Any = None
+    connection_id: Any = None
 
 
 class ToolProviderError(Exception):
@@ -126,6 +129,23 @@ class ProviderBlocked(ToolProviderError):
     """Policy refused the connection, for example a URL resolving to a private address."""
 
     code = "url_blocked"
+
+
+class ProviderRateLimited(ToolProviderError):
+    """The provider asked us to wait. Retried only if the wait fits the call's budget."""
+
+    code = "rate_limited"
+    retryable = True
+
+    def __init__(self, retry_after_seconds: float) -> None:
+        super().__init__(self.code)
+        self.retry_after_seconds = retry_after_seconds
+
+
+class CredentialRejected(ToolProviderError):
+    """The stored credential is missing, unusable or refused. Needs an admin, not a retry."""
+
+    code = "credential_rejected"
 
 
 class DefinitionChanged(ToolProviderError):

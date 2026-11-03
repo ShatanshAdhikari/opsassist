@@ -37,6 +37,7 @@ from opsassist.observability import get_logger
 from opsassist.tools.base import (
     DefinitionChanged,
     InvocationStatus,
+    ProviderRateLimited,
     ServerConfig,
     ServerHealth,
     ToolMissing,
@@ -183,11 +184,16 @@ class ToolGateway:
                 details={"code": exc.code},
             ) from exc
         except ToolProviderError as exc:
-            self._breaker.record_failure(key)
+            details: dict[str, Any] = {"code": exc.code}
+            if isinstance(exc, ProviderRateLimited):
+                # The provider is healthy and said so. This must not open the breaker.
+                details["retry_after_seconds"] = round(exc.retry_after_seconds)
+            else:
+                self._breaker.record_failure(key)
             await self._finish_failed(actor, plan, exc, started)
             raise ToolUnavailable(
                 "The tool call did not complete, so no live data was retrieved",
-                details={"code": exc.code},
+                details=details,
             ) from exc
 
         self._breaker.record_success(key)
@@ -288,7 +294,8 @@ class ToolGateway:
 
     @staticmethod
     def _mark_server_failure(server: ToolServer, exc: ToolProviderError) -> None:
-        server.health = ServerHealth.UNAVAILABLE
+        if not isinstance(exc, ProviderRateLimited):
+            server.health = ServerHealth.UNAVAILABLE
         server.last_error_code = exc.code
         server.last_checked_at = utcnow()
 

@@ -20,7 +20,7 @@ from mcp import Client, MCPError
 from mcp.types import CallToolResult, Implementation, TextContent, Tool
 from pydantic import ValidationError
 
-from opsassist.observability import get_logger, redact_secrets
+from opsassist.observability import get_logger, redact_secrets, redact_tree
 from opsassist.tools.base import (
     DefinitionChanged,
     ProviderProtocolError,
@@ -87,16 +87,6 @@ async def _list_tools(client: Client, *, max_tools: int) -> list[ToolDescriptor]
     raise ProviderProtocolError()
 
 
-def _redact_tree(value: Any) -> Any:
-    if isinstance(value, str):
-        return redact_secrets(value)
-    if isinstance(value, dict):
-        return {key: _redact_tree(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_redact_tree(item) for item in value]
-    return value
-
-
 def _to_output(result: CallToolResult, *, max_chars: int) -> ToolOutput:
     texts = [block.text for block in result.content if isinstance(block, TextContent)]
     omitted = len(result.content) - len(texts)
@@ -110,7 +100,7 @@ def _to_output(result: CallToolResult, *, max_chars: int) -> ToolOutput:
         truncated = True
     return ToolOutput(
         text=redact_secrets(text),
-        structured=_redact_tree(structured) if structured is not None else None,
+        structured=redact_tree(structured) if structured is not None else None,
         is_error=bool(result.is_error),
         truncated=truncated,
         omitted_blocks=omitted,

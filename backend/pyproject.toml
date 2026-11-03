@@ -8,6 +8,7 @@ dependencies = [
     "anyio>=4.5",
     "argon2-cffi>=23.1",
     "asyncpg>=0.30",
+    "cryptography>=44",
     "fastapi>=0.115",
     "httpx>=0.28",
     "jsonschema>=4.23",
@@ -15,6 +16,7 @@ dependencies = [
     "pgvector>=0.3.6",
     "pydantic>=2.10",
     "pydantic-settings>=2.6",
+    "pyjwt>=2.10",
     "pypdf>=5.1",
     "python-multipart>=0.0.20",
     "referencing>=0.35",
@@ -52,8 +54,9 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 markers = [
     "live_model: requires a local Ollama daemon; deselected by default",
+    "live_github: requires a real GitHub App, see docs/GITHUB_SETUP.md; deselected by default",
 ]
-addopts = "-m 'not live_model'"
+addopts = "-m 'not live_model and not live_github'"
 
 [tool.ruff]
 line-length = 100
@@ -67,7 +70,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "S608"]
+"tests/**" = ["S101", "S105", "S106", "S608", "ASYNC240"]
 "evals/**" = ["S101", "S603", "ASYNC221"]
 "migrations/**" = ["S608"]
 # SQL fragments here are module constants. All values are bound parameters.
