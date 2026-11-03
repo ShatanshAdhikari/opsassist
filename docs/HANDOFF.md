@@ -13,18 +13,16 @@ but **the assistant cannot use them yet** and they have no screen.
 | Piece | State | Proven against |
 | --- | --- | --- |
 | Foundation and document Q&A (Phases 0 to 2) | On `main` | Real Postgres, Ollama, browser test |
-| Tool layer and MCP client | PR #1, open, CI passing | Mock MCP server, real protocol |
-| Encrypted credentials, read-only GitHub | Second PR, stacked on PR #1 | Fake GitHub only |
+| Tool layer and MCP client | On `main` (PR #1) | Mock MCP server, real protocol |
+| Encrypted credentials, read-only GitHub | On `main` (PR #2) | Fake GitHub only |
 | Planner, conversation context, Gmail, Calendar, scheduled tracking, approvals | Not started | |
 
 ### Git
 
 - Repo: <https://github.com/ShatanshAdhikari/opsassist>. **Public**, by the owner's choice.
-- `main` at `a19d0fb`. Its own CI run failed on the outage bug, which is fixed in PR #1.
-- `feat/tool-layer` at `c50b622`, pushed: [PR #1](https://github.com/ShatanshAdhikari/opsassist/pull/1),
-  mergeable, backend and web CI passing. Not merged.
-- `feat/github-readonly` branches from `feat/tool-layer`, pushed, with a second PR based on it. See
-  `gh pr list`. Its CI result is not recorded here, so check it. Merge PR #1 first, then retarget.
+- PR #1 and PR #2 were merged into `main` at the owner's request. Work from `main`, on a new branch.
+- `feat/tool-layer` and `feat/github-readonly` were left in place, and can be deleted.
+- Merging did not settle ADR-0012 or prove real GitHub behaviour: see the decisions below.
 
 ### Step 2 verification at time of writing
 
@@ -40,17 +38,16 @@ but **the assistant cannot use them yet** and they have no screen.
 2. **ADR-0012.** Any workspace member can read every repo on a connection, even a private one they
    could not open on GitHub. Recommended: accept for now with one workspace, and add per-person
    checks before repos need different audiences. Not yet agreed.
-3. **Merge PR #1, then the second PR.** Owner's call.
-4. **Google account.** The owner's account looks like personal Gmail, which cannot be an internal
+3. **Google account.** The owner's account looks like personal Gmail, which cannot be an internal
    Workspace app. An OAuth app in testing mode works for personal use, but refresh tokens expire
    after 7 days. Public release needs Google's restricted-scope review. Needed before Gmail.
-5. ADRs 0001 to 0012 are still provisional, pending the owner's review.
+4. ADRs 0001 to 0012 are still provisional, pending the owner's review.
 
 Open product decisions are also listed in `docs/IMPLEMENTATION_PLAN.md`.
 
 ## Next work, in the agreed order
 
-1. Finish step 2: live GitHub test, then merge.
+1. Finish step 2: run the live GitHub test, and fix whatever it finds.
 2. **Conversation context and bounded planner**, so the assistant can use tools. Limits on tool calls,
    time and tokens. Answers cite tool results with source and fetch time. Tool output stays
    untrusted, and the injection criterion must be retested, since it holds trivially until a model
@@ -100,8 +97,9 @@ Linux is far faster and matches production: mount `backend` read-only into `pyth
 - **Two virtualenvs:** `%LOCALAPPDATA%\opsassist\venv` is the owner's running app, and `venv-dev` is
   for development. Windows locks a venv's executables while they run, so **do not sync `venv` or stop
   the owner's processes** without asking.
-- **Owner's app was running at last check:** API on 8000 reporting ready, worker, web. It runs from
-  this same working tree, and which code it loaded is unknown, so assume a restart changes behaviour.
+- **The app may be stopped.** The owner asked for VS Code to be closed at the end of this session,
+  which ends any API, worker or web servers running in its terminals. The `db` container and Docker
+  Desktop keep running. Start things with the commands above.
 - **Dev database is at migration `0001`, with 1 user, 1 workspace, 0 documents.** Before restarting on
   this branch: stop the API and worker, sync, then `alembic upgrade head`. No password is recorded
   anywhere, and there is no reset flow.
