@@ -351,6 +351,106 @@ class Chunk(Base):
     )
 
 
+# --- Tools (RLS by workspace) -----------------------------------------------------------
+
+
+class ToolServer(Base):
+    __tablename__ = "tool_servers"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug"),
+        CheckConstraint(
+            "(kind = 'mcp_http' AND url IS NOT NULL AND stdio_name IS NULL) OR "
+            "(kind = 'mcp_stdio' AND stdio_name IS NOT NULL AND url IS NULL)",
+            name="target_matches_kind",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    workspace_id: Mapped[uuid.UUID] = _fk("workspaces.id")
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(2000))
+    stdio_name: Mapped[str | None] = mapped_column(String(100))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    health: Mapped[str] = mapped_column(String(20), nullable=False)
+    last_error_code: Mapped[str | None] = mapped_column(String(50))
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[uuid.UUID | None] = _fk("users.id", nullable=True, ondelete="SET NULL")
+    created_at: Mapped[datetime] = _created_at()
+
+
+class ToolDefinition(Base):
+    """The reviewed, pinned description of a tool.
+
+    `description`, `input_schema` and `annotations` are what the admin approved. A newer version
+    from the provider waits in `pending_definition` and has no effect until reviewed.
+    """
+
+    __tablename__ = "tool_definitions"
+    __table_args__ = (
+        UniqueConstraint("server_id", "name"),
+        UniqueConstraint("workspace_id", "tool_id"),
+        CheckConstraint("risk_level BETWEEN 0 AND 3", name="risk_level_valid"),
+        CheckConstraint("access IN ('read', 'write')", name="access_valid"),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    workspace_id: Mapped[uuid.UUID] = _fk("workspaces.id")
+    server_id: Mapped[uuid.UUID] = _fk("tool_servers.id")
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    tool_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    input_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    annotations: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    definition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    risk_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    access: Mapped[str] = mapped_column(String(10), nullable=False)
+    required_scopes: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    timeout_seconds: Mapped[float | None] = mapped_column(Float)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    available: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    pending_definition: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    pending_hash: Mapped[str | None] = mapped_column(String(64))
+    reviewed_by: Mapped[uuid.UUID | None] = _fk("users.id", nullable=True, ondelete="SET NULL")
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_seen_at: Mapped[datetime] = _created_at()
+    last_seen_at: Mapped[datetime] = _created_at()
+
+
+class ToolInvocation(Base):
+    """One attempted call. Holds a hash of the arguments, never the arguments or the output.
+
+    Tool and server are plain references, not foreign keys, so history outlives a deleted server.
+    The application role cannot delete these rows.
+    """
+
+    __tablename__ = "tool_invocations"
+    __table_args__ = (
+        Index("ix_tool_invocations_workspace_time", "workspace_id", "created_at"),
+        Index("ix_tool_invocations_tool", "tool_definition_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    workspace_id: Mapped[uuid.UUID] = _fk("workspaces.id")
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    tool_definition_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    server_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    tool_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    definition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    arguments_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(50))
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    latency_ms: Mapped[float | None] = mapped_column(Float)
+    output_chars: Mapped[int | None] = mapped_column(Integer)
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = _created_at()
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 # --- Assistant (RLS by workspace) -------------------------------------------------------
 
 

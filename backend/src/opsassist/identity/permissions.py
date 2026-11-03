@@ -16,11 +16,22 @@ class Permission(StrEnum):
     SOURCES_ADMIN = "sources:admin"
     MEMBERS_MANAGE = "members:manage"
     AUDIT_READ = "audit:read"
+    TOOLS_INVOKE = "tools:invoke"
+    TOOLS_ADMIN = "tools:admin"
 
 
 _VIEWER = frozenset({Permission.WORKSPACE_READ, Permission.KNOWLEDGE_QUERY})
-_MEMBER = _VIEWER | {Permission.DOCUMENTS_WRITE, Permission.SOURCES_CREATE}
-_ADMIN = _MEMBER | {Permission.SOURCES_ADMIN, Permission.MEMBERS_MANAGE, Permission.AUDIT_READ}
+_MEMBER = _VIEWER | {
+    Permission.DOCUMENTS_WRITE,
+    Permission.SOURCES_CREATE,
+    Permission.TOOLS_INVOKE,
+}
+_ADMIN = _MEMBER | {
+    Permission.SOURCES_ADMIN,
+    Permission.MEMBERS_MANAGE,
+    Permission.AUDIT_READ,
+    Permission.TOOLS_ADMIN,
+}
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.VIEWER: _VIEWER,

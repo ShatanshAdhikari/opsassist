@@ -1,34 +1,40 @@
 # Integration Strategy
 
-Status: draft for review, 2026-11-03. Nothing in this document is built yet except
-the model provider adapters. Phase 3 implements it.
+Status, 2026-11-04: the tool layer in sections 1, 5 and 6 is built (`backend/src/opsassist/tools/`),
+with MCP over HTTP and stdio. It has been exercised only against a mock server. **No real
+integration exists**: GitHub, email, calendar and credentials below are still design. Section 6
+marks what differs from the original plan.
 
 ## 1. One contract, two transports
 
 All capabilities reach the orchestrator through one **Tool Gateway** whether they
 are MCP servers or native adapters. Callers never see the transport.
 
+Built today (`tools/base.py`, `models.py`). `invoke` compares the live definition with the pinned
+hash before calling. There is no retry policy or idempotency column yet, because only read tools
+run and those retry by default.
+
 ```python
 class ToolDefinition:          # persisted, admin-reviewed, pinned
-    tool_id: str               # stable: "github.issues.search"
-    provider: str              # "github"; server identity for MCP
-    description: str           # reviewed text, shown to models
-    input_schema: dict         # JSON Schema; additionalProperties false
+    tool_id: str               # stable: "<server slug>.<tool name>"
+    server_id: UUID            # provider identity
+    description: str           # reviewed text; a newer version waits in pending_definition
+    input_schema: dict         # JSON Schema; unknown top-level fields are always refused
     risk_level: 0 | 1 | 2 | 3
     access: "read" | "write"
-    required_scopes: list[str]
-    timeout_s: float
-    retry: RetryPolicy         # writes default to no automatic retry
-    idempotency: "natural" | "key" | "none"
+    required_scopes: list[str] # recorded; enforced once credentials exist
+    timeout_seconds: float | None
+    review_status: "pending" | "approved" | "changed"
     enabled: bool
-    health: "healthy" | "degraded" | "unavailable"
+    available: bool            # the server still offers it
 
 class ToolProvider(Protocol):
-    async def discover(self) -> list[ToolDescriptor]: ...
-    async def invoke(self, tool_id, args, credential, idempotency_key) -> ToolResult: ...
-    async def verify(self, tool_id, args, idempotency_key) -> VerifyResult: ...   # reconcile writes
-    async def health(self) -> Health: ...
+    async def discover(self, *, timeout_seconds) -> list[ToolDescriptor]: ...
+    async def invoke(self, name, arguments, *, expected_hash, timeout_seconds) -> ToolOutput: ...
 ```
+
+Planned additions for Phase 4 writes: `credential`, `idempotency_key`, a `verify` method to
+reconcile uncertain writes, and per-tool `retry` and `idempotency` settings.
 
 ## 2. When MCP, when native
 
@@ -64,9 +70,12 @@ are part of the connector's definition of done.
 
 ## 5. Reliability contract
 
-Every provider call goes through shared middleware: timeout, per-connection rate
-limit honouring `Retry-After`, exponential backoff with jitter (reads only by default),
-circuit breaker per provider, and output size cap.
+Built: one timeout budget covering all attempts, per-user-per-server rate limit, exponential
+backoff with jitter (reads only), circuit breaker per server, output size cap. Rate limiter and
+breaker state are per process.
+
+Planned: honouring a provider's `Retry-After`. MCP does not surface it, so this arrives with the
+native adapters.
 
 Writes: require an idempotency key. If the result is uncertain, call `verify` and
 never replay blindly. No `verify` means the action is reported as `outcome_unknown`
@@ -74,11 +83,22 @@ for human reconciliation.
 
 ## 6. MCP lifecycle
 
-1. Admin registers server (URL or allowlisted stdio command), identity, credentials.
-2. Discovery snapshot stored; each tool imported **disabled**, risk unclassified treated as Level 3.
-3. Admin reviews, classifies and enables tools.
-4. Periodic re-discovery. Any hash change in schema or description disables the tool and alerts.
-5. Disconnection marks tools unavailable; the orchestrator reports that live state was not checked.
+1. **Built.** Admin registers a server: a URL passing the policy in `tools/url_policy.py`, or the
+   name of a stdio server from deployment configuration. **No credentials yet**, so only servers
+   needing no authentication work, and URLs containing credentials are refused.
+2. **Built.** Admin triggers discovery. Each tool is imported **disabled**, unclassified, at Level 3.
+   Definitions that are invalid or hold non-local schema references are rejected and reported.
+3. **Built.** Admin reviews, classifies and enables. The review names the hash of the definition
+   shown; a stale hash is refused.
+4. **Built, differently from the plan.** Instead of periodic re-discovery, every invocation lists
+   the tools and compares hashes before calling, so a changed tool is never called. This covers
+   tools in use. A scheduled sweep and admin alerts are still planned, so today an admin learns of
+   a change from the audit trail or the tool list.
+5. **Built.** Tool server health is recorded on each call. Failures return `tool_unavailable` with
+   a message saying no live data was retrieved. Nothing above the gateway consumes this yet.
+
+Only read tools at Level 0 run. Everything else is refused with `requires_approval_flow` until the
+approval flow of Phase 4 exists, however an admin classifies it.
 
 ## 7. Test strategy
 
