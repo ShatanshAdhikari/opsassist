@@ -12,7 +12,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from opsassist.tools.base import ProviderTimeout, ToolProviderError
+from opsassist.tools.base import ProviderRateLimited, ProviderTimeout, ToolProviderError
 
 
 @dataclass
@@ -48,6 +48,8 @@ async def call_with_retry[T](
                 raise
             # Jitter avoids synchronized retries, so it has no security role.
             delay = random.uniform(0, base_delay_seconds * 2 ** (attempt - 1))  # noqa: S311
+            if isinstance(exc, ProviderRateLimited):
+                delay = max(delay, exc.retry_after_seconds)
             if deadline - time.monotonic() <= delay:
                 exc.attempts = attempt  # type: ignore[attr-defined]
                 raise

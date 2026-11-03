@@ -46,7 +46,7 @@ Acceptance:
 - Model or embedding outage degrades honestly.
 - Eval harness produces numbers for retrieval, citation and permission metrics.
 
-### Phase 3: MCP and integration foundation. Tool layer implemented, connectors not started.
+### Phase 3: MCP and integration foundation. Tool layer, credentials and read-only GitHub implemented. Email not started.
 Tool registry, MCP client, schema validation, permission checks, invocation log,
 timeouts, mock MCP server. Then read-only GitHub, then read-only email.
 
@@ -57,7 +57,8 @@ Acceptance: unknown fields rejected; disabled or changed tools not callable; out
 reported; invocation audited; injected tool output cannot trigger any action; live PR
 status answer cites API with timestamp.
 
-Status of those criteria: all met against a mock server, except the last, which needs GitHub. The
+Status of those criteria: all met against mock and fake servers. Live PR status with API timestamp
+is implemented, but needs `docs/GITHUB_SETUP.md` run against real GitHub to be proven. The
 injection criterion holds trivially for now, since no model or workflow consumes tool output. It
 must be retested when the planner arrives.
 

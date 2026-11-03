@@ -2,6 +2,48 @@
 
 Records what was verified, not what was intended. Newest first.
 
+## 2026-11-04: Credentials and read-only GitHub, branch `feat/github-readonly`
+
+Stacked on `feat/tool-layer`.
+
+### What changed
+
+- `credentials/`: envelope-encrypted secrets, key rotation (ADR-0011).
+- `integrations/`: connection lifecycle, GitHub App authentication, native read-only provider with
+  five tools. Access decision in ADR-0012, which needs the owner's agreement.
+- Migration `0003`: `integration_connections`, `stored_credentials`, GitHub as a tool server kind.
+- API under `/connections`. CLI: `generate-credential-key`, `rotate-credential-keys`.
+- Setup and revocation steps in `GITHUB_SETUP.md`.
+
+### Verified results
+
+| Check | Result |
+| --- | --- |
+| PR #1 CI (`feat/tool-layer`), first passing CI, includes the eval step | backend and web passed |
+| `ruff check`, `ruff format --check`, `mypy --strict` | clean (65 source files) |
+| Full backend suite, Windows, Python 3.14 | 308 passed, 2 live tests deselected |
+| Full backend suite, Linux container, Python 3.13, direct Docker network | 308 passed |
+| Test database: up, down to `0002`, up, down to base, up, `alembic check` | passed, no drift |
+
+### Not verified
+
+- **Real GitHub has not been called.** Every result above is against a fake written from GitHub's
+  documentation. The fake checks JWT signatures and token scoping, but it cannot show that GitHub
+  behaves as documented. `tests/integration/test_github_live.py` covers this once an app exists,
+  and has not been run.
+- That the down-scoped token cannot write. Tested only in that the request asks for read-only.
+- `opsassist rotate-credential-keys` moving real rows as a command. It ran with nothing to move, and
+  the rotation logic underneath it is tested separately.
+- Migration `0003` was not applied to the development database.
+
+### Known limitations
+
+- No per-person GitHub access check (ADR-0012).
+- API only. No screen, and the assistant does not use these tools yet.
+- Deleting a connection does not revoke anything on GitHub.
+- Encryption keys are environment variables.
+- One owner per connection, and no pagination beyond the first page of each result.
+
 ## 2026-11-04: Tool layer (Phase 3, first step), branch `feat/tool-layer`
 
 ### What changed
