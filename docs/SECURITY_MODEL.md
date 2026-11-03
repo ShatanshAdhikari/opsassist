@@ -6,8 +6,8 @@ Status: draft for review, 2026-11-03. Each control is marked **[built]** or
 ## 1. Assets
 
 Organizational documents and chunks; provider credentials *(none stored yet)*;
-sessions and password hashes; audit trail; the ability to act on external systems
-*(none yet)*.
+sessions and password hashes; audit trail; the ability to read from registered tool servers;
+the ability to act on external systems *(none yet: write tools are refused)*.
 
 ## 2. Threat actors
 
@@ -90,7 +90,7 @@ no network by default.
 ## 9. Audit, retention, compliance
 
 - [built] `audit_events` is append-only for the app role at the database level (`INSERT, SELECT` only).
-- [built] Audited: login success and failure, logout, source create and delete, grant changes, document upload and delete, knowledge query with source IDs.
+- [built] Audited: login success and failure, logout, source create and delete, grant changes, document upload and delete, knowledge query with source IDs, tool server changes, discovery, tool review, definition changes, and every tool invocation including denials.
 - [planned] Retention policy, audit export, admin audit UI, backup and restore validation.
 
 **No regulatory compliance is claimed.** GDPR, SOC 2, HIPAA and similar are open
@@ -98,12 +98,36 @@ decisions that depend on deployment and data. Encryption at rest and in transit
 are deployment responsibilities and not yet configured in the local stack: the
 local compose file uses plaintext connections and development-only passwords.
 
-## 10. MCP-specific controls [planned, Phase 3]
+## 10. Tool and MCP controls
 
-Admin allowlist of servers; pinned schemas and descriptions; rug-pull detection;
-per-server credentials, never shared; stdio servers launched only from admin
-configuration with no arbitrary command input; output size limits; tool output
-tagged untrusted; per-tool rate limits and circuit breaker.
+Nothing calls tools automatically yet: no model or workflow is connected to the gateway. Calls come
+only from an authenticated person through the API.
+
+- [built] Registration, discovery and review need `tools:admin`. Invocation needs `tools:invoke` (member and above), checked in the gateway as well as the route. Other workspaces get 404, and RLS covers all three tool tables.
+- [built] Discovered tools start disabled at Level 3. Server annotations such as `readOnlyHint` are stored and displayed, but grant nothing.
+- [built] Pinning: name, description, schema and annotations are hashed. Each call compares the live hash first; a mismatch means no call, the tool is disabled and audited, and the approved text stays in place. Review names the exact hash, and reverting a definition does not re-enable a tool.
+- [built] **Only Level 0 read tools run.** Writes are refused until Phase 4, even if an admin approves them.
+- [built] Arguments are validated against the pinned schema, with a size limit. Unknown top-level fields are always refused. Validation errors never echo values.
+- [built] Schemas cannot trigger requests: non-local `$ref` is rejected at discovery, and validation runs with an empty reference registry. jsonschema's default would fetch remote references.
+- [built] SSRF policy for server URLs: public HTTPS only, every DNS answer must be public, and no credentials, query or fragment. Checked at registration and before each connection. `TOOL_ALLOWED_PRIVATE_HOSTS` is the explicit exception.
+- [built] Stdio commands come only from `MCP_STDIO_SERVERS` in deployment configuration. The API can only name one. Child processes get a minimal environment, not this process's secrets.
+- [built] The MCP client declares no sampling, elicitation or roots capability and has response caching off.
+- [built] Tool output is marked untrusted, secret-redacted and size-capped. Provider error text is never returned to callers.
+- [built] Invocation log stores hashes, sizes and outcomes, never arguments or output, and the app role cannot delete it. Denied calls are recorded too.
+- [built] Timeout, retries for reads, per-user rate limit, per-server circuit breaker. Limiter and breaker state are per process.
+
+Known gaps:
+
+1. **Admins decide what "read" means.** The platform cannot tell whether a tool really is read-only. An admin who classifies a write tool as Level 0 read makes it callable. Review is the control.
+2. **DNS rebinding:** the policy check and the connection resolve the name separately. Use network-level egress rules in production.
+3. **Hostile server memory use:** output limits apply after the response is received, and the SDK does not cap JSON response size. A hostile HTTP server could exhaust memory, so register only servers you trust that far.
+4. **Hostile schemas:** a `pattern` can be slow to evaluate (ReDoS) during validation, and only the schema's total size is limited. Reviewers should reject unusual patterns.
+5. No per-tool or per-user tool grants: any member can call any enabled read tool. Argument hashes are unsalted, so someone with the log could confirm a guessed value.
+6. A crash mid-call leaves an invocation at `running`. It is visible but nothing reconciles it.
+7. Stdio servers are a deployment-wide list, so any workspace admin can register a configured one.
+
+Planned: per-server credentials in an encrypted store (next); scheduled re-discovery with alerts;
+treating tool output as tainted in the orchestrator, so a plan derived from it cannot auto-execute.
 
 ## 11. Known gaps at this milestone
 

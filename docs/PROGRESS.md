@@ -2,6 +2,65 @@
 
 Records what was verified, not what was intended. Newest first.
 
+## 2026-11-04: Tool layer (Phase 3, first step), branch `feat/tool-layer`
+
+### What changed
+
+- `backend/src/opsassist/tools/`: tool contract, registry with admin review and definition pinning,
+  gateway enforcing policy, schema validation, SSRF policy, retry and circuit breaker, MCP provider
+  on the official SDK over HTTP and stdio.
+- Migration `0002`: `tool_servers`, `tool_definitions`, `tool_invocations`, all under RLS.
+- API under `/api/v1/workspaces/{id}`: `tool-servers`, `tools`, `tools/{id}/review`,
+  `tools/{id}/invoke`, `tool-invocations`.
+- Bug found by the first CI run on `main`, fixed here: a database outage on Linux returned 500, not
+  503, because asyncio raises plain `OSError` for a host with several addresses. Windows hid it.
+
+Design reasoning is in ADR-0009 and ADR-0010, controls and gaps in `SECURITY_MODEL.md` section 10.
+
+### Verified results
+
+| Check | Result |
+| --- | --- |
+| `ruff check`, `ruff format --check`, `mypy --strict` | clean (57 source files) |
+| Full backend suite, Windows, Python 3.14 | 221 passed |
+| Full backend suite, Linux container, Python 3.13, direct Docker network | 221 passed |
+| `tests/integration/test_tools.py`, same setup, 6 repeated runs | 40 passed each |
+| Real MCP over stdio subprocess and over HTTP, including killing the HTTP server | passed |
+| Test database: down to `0001`, up, down to base, up, `alembic check` | passed, no drift |
+| First CI run on `main` (before this branch) | web passed; backend failed on the bug above, 139 of 140 |
+
+### Not verified
+
+- **CI has not run on this branch**, so the outage fix is unconfirmed under CI itself. The eval step
+  has also never run in CI, since it comes after the failing test step.
+- **Intermittent failure, not root-caused.** With the container reaching the database through
+  `host.docker.internal`, 2 of 5 runs failed: a 60-second hang connecting to the database, at
+  different tests each time. It did not occur in 7 runs over the direct Docker network. That points
+  at Docker Desktop port forwarding rather than this code, but a 400-connection probe through a
+  host-gateway route did not reproduce it, so this is likely, not proven.
+- **No real integration or real third-party MCP server.** Only the mock in `tests/`, on the SDK.
+- Migration `0002` was not applied to the development database.
+- Latency under load. Each call costs a connection and a tool listing.
+- Python versions differ: the image uses 3.13, CI and the local environment use 3.14. Both have
+  been run, but nothing pins them together.
+
+### Known limitations
+
+- Backend API only. No Integrations screen yet.
+- Nothing calls tools automatically: no planner, and the assistant does not use them yet.
+- No credentials, so only servers needing no authentication can be registered.
+- No scheduled re-discovery or alerts.
+- Gaps specific to security are listed in `SECURITY_MODEL.md` section 10.
+
+### Upgrading a running checkout
+
+Stop the API and worker first, because Windows locks the virtualenv. Then
+`uv sync --extra anthropic` and `uv run alembic upgrade head`, and restart.
+
+### Recommended next step
+
+Encrypted credential store, then read-only GitHub.
+
 ## 2026-11-03: Phases 0 to 2 implemented, pending owner review
 
 The project owner was away and asked for work to continue, so implementation went ahead on the

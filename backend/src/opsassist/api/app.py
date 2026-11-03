@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from opsassist.api.errors import install_error_handlers
 from opsassist.api.middleware import OriginCheckMiddleware, RequestContextMiddleware
-from opsassist.api.routes import assistant, auth, health, knowledge, workspaces
+from opsassist.api.routes import assistant, auth, health, knowledge, tools, workspaces
 from opsassist.config import Settings, get_settings
 from opsassist.container import Container, build_container
 from opsassist.observability import configure_logging
@@ -40,6 +40,6 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.add_middleware(OriginCheckMiddleware, allowed_origins=resolved.allowed_origins)
     app.add_middleware(RequestContextMiddleware)
 
-    for module in (health, auth, workspaces, knowledge, assistant):
+    for module in (health, auth, workspaces, knowledge, assistant, tools):
         app.include_router(module.router)
     return app

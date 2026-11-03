@@ -59,3 +59,20 @@ class RateLimited(AppError):
 class ServiceUnavailable(AppError):
     status_code = 503
     code = "service_unavailable"
+
+
+class ToolUnavailable(AppError):
+    """The call did not complete. Callers must not imply that live state was checked."""
+
+    status_code = 503
+    code = "tool_unavailable"
+
+
+class ToolNotCallable(AppError):
+    status_code = 409
+    code = "tool_not_callable"
+
+
+class ToolDefinitionChanged(AppError):
+    status_code = 409
+    code = "tool_definition_changed"

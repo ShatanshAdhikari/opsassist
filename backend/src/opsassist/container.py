@@ -12,6 +12,8 @@ from opsassist.identity.service import AuthService, SlidingWindowLimiter
 from opsassist.knowledge.blobs import BlobStore, LocalBlobStore
 from opsassist.llm.base import EmbeddingProvider, LLMProvider
 from opsassist.llm.factory import build_embedding_provider, build_llm_provider
+from opsassist.tools.factory import build_provider_factory
+from opsassist.tools.gateway import ToolGateway
 
 
 @dataclass
@@ -24,6 +26,7 @@ class Container:
     embedder: EmbeddingProvider
     llm: LLMProvider | None
     question_limiter: SlidingWindowLimiter
+    tools: ToolGateway
 
     async def close(self) -> None:
         await self.engine.dispose()
@@ -41,4 +44,5 @@ def build_container(settings: Settings) -> Container:
         embedder=build_embedding_provider(settings),
         llm=build_llm_provider(settings),
         question_limiter=SlidingWindowLimiter(settings.questions_per_minute, 60),
+        tools=ToolGateway(settings, factory, build_provider_factory(settings)),
     )

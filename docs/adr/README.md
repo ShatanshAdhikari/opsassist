@@ -97,3 +97,31 @@ dependencies; ruff and mypy.
 eval ecosystem. Python's MCP SDK is official and mature.
 
 **Consequences.** Async discipline needed; CPU-heavy parsing runs in the worker via threads.
+
+## ADR-0009: Official MCP SDK 2.x, connecting per operation
+
+**Decision.** Use the official `mcp` package, pinned `>=2.3,<3`, through its high-level `Client`.
+Open a connection for each discovery or invocation, and list tools before every call to compare
+the pinned definition hash.
+
+**Alternatives.**
+- `mcp` 1.x: more examples exist, but new work on an old major version means a migration later.
+- Long-lived pooled sessions: faster, but they need reconnection and state handling, and a cached
+  tool list would weaken the definition check.
+- Periodic re-discovery only: cheaper per call, but leaves a window in which a changed tool runs.
+
+**Consequences.** Every call costs a handshake and a tool listing, and a stdio call also costs a
+process start. Per-call latency has not been measured on its own. This should suit human-paced
+reads but may not suit a planner making many calls, so measure before building one.
+SDK 2.x is recent, so upgrades need a review of the changelog.
+
+## ADR-0010: Tool layer ships read-only, with writes refused in the gateway
+
+**Decision.** `not_callable_reason` refuses anything other than `access=read` at risk level 0,
+regardless of admin classification, until the approval flow exists.
+
+**Alternatives.** Trust admin classification now: faster to demo, but it would let a consequential
+action run with no approval step, which the brief forbids.
+
+**Consequences.** Phase 4 has one place to change. Admin classification of a tool as read remains a
+trust decision: see `SECURITY_MODEL.md` section 10.

@@ -1,6 +1,8 @@
 # Architecture
 
 Status: draft for review, 2026-11-03. Sections marked *(planned)* are not built.
+Update 2026-11-04: the tool registry and gateway now exist in `tools/`, read-only, so section 3.2 is
+partly built. See `INTEGRATION_STRATEGY.md` section 6 for what differs. Approvals are still planned.
 
 ## 1. Shape: modular monolith with separate worker process
 
