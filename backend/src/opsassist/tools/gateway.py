@@ -26,6 +26,7 @@ from opsassist.config import Settings
 from opsassist.db import SessionFactory, tenant_scope
 from opsassist.errors import (
     AppError,
+    NotFound,
     ToolDefinitionChanged,
     ToolNotCallable,
     ToolUnavailable,
@@ -54,6 +55,7 @@ from opsassist.tools.registry import (
     get_tool,
     not_callable_reason,
     server_config,
+    usable_by,
 )
 from opsassist.tools.reliability import CircuitBreaker, call_with_retry
 from opsassist.tools.schema import validate_arguments
@@ -206,6 +208,9 @@ class ToolGateway:
         async with tenant_scope(self._factory, actor.workspace_id) as session:
             # NotFound raises through: another workspace's tool has nothing to record against.
             tool, server = await get_tool(session, tool_definition_id)
+            if not usable_by(server, actor.user_id):
+                # Same answer as a tool that does not exist.
+                raise NotFound("Tool not found")
 
             refusal: AppError | None = None
             code: str | None = not_callable_reason(tool, server)

@@ -13,10 +13,11 @@ from sqlalchemy import select
 from opsassist.api.deps import WorkspaceContext, WorkspaceDep
 from opsassist.api.routes.tools import ServerOut
 from opsassist.api.schemas import RequestBody, ResponseBody
-from opsassist.errors import ToolUnavailable
+from opsassist.errors import Conflict, ToolUnavailable
 from opsassist.identity.permissions import Permission
 from opsassist.integrations import connections as service
 from opsassist.integrations.github_provider import GitHubToolProvider
+from opsassist.integrations.gmail_connections import GMAIL, disconnect
 from opsassist.models import IntegrationConnection
 from opsassist.tools.base import ToolProviderError
 from opsassist.tools.registry import AdminActor
@@ -69,6 +70,14 @@ def _admin(ctx: WorkspaceContext) -> AdminActor:
     return AdminActor(ctx.workspace_id, ctx.user.id)
 
 
+async def _require_github(ctx: WorkspaceContext, connection_id: uuid.UUID) -> None:
+    """Keys, repository lists and App verification mean nothing for other providers."""
+    async with ctx.tx() as session:
+        connection = await service.get_connection(session, connection_id)
+    if connection.provider != service.GITHUB:
+        raise Conflict("This action only applies to GitHub connections")
+
+
 @router.post("/github", status_code=status.HTTP_201_CREATED)
 async def create_github(
     body: CreateGitHubConnectionRequest, ctx: WorkspaceDep
@@ -108,6 +117,7 @@ async def replace_key(
 ) -> ConnectionOut:
     actor = _admin(ctx)
     container = ctx.container
+    await _require_github(ctx, connection_id)
     async with ctx.tx() as session:
         connection = await service.replace_key(
             session,
@@ -125,6 +135,7 @@ async def set_repositories(
     connection_id: uuid.UUID, body: SetRepositoriesRequest, ctx: WorkspaceDep
 ) -> ConnectionOut:
     actor = _admin(ctx)
+    await _require_github(ctx, connection_id)
     async with ctx.tx() as session:
         connection = await service.set_repositories(
             session, actor, ctx.container.github.tokens, connection_id, body.repositories
@@ -137,8 +148,7 @@ async def verify(connection_id: uuid.UUID, ctx: WorkspaceDep) -> VerifyOut:
     """Live check of key, app, installation and repository list. Reports failure in the body."""
     actor = _admin(ctx)
     container = ctx.container
-    async with ctx.tx() as session:
-        await service.get_connection(session, connection_id)
+    await _require_github(ctx, connection_id)
     provider = GitHubToolProvider(container.github, ctx.workspace_id, connection_id)
     code: str | None = None
     try:
@@ -157,10 +167,26 @@ async def verify(connection_id: uuid.UUID, ctx: WorkspaceDep) -> VerifyOut:
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_connection(connection_id: uuid.UUID, ctx: WorkspaceDep) -> None:
-    """Removes our copy of the key and the tools. Uninstall the app on GitHub as well."""
+async def delete_connection(
+    connection_id: uuid.UUID, ctx: WorkspaceDep, force: bool = False
+) -> None:
+    """Removes our copy of the key and the tools. Uninstall the app on GitHub as well.
+
+    An admin may remove someone's mailbox connection, which revokes it at Google first.
+    """
     actor = _admin(ctx)
     container = ctx.container
+    async with ctx.tx() as session:
+        provider = (await service.get_connection(session, connection_id)).provider
+    if provider == GMAIL:
+        await disconnect(
+            container.gmail,
+            workspace_id=ctx.workspace_id,
+            actor_user_id=ctx.user.id,
+            connection_id=connection_id,
+            force=force,
+        )
+        return
     async with ctx.tx() as session:
         await service.delete_connection(
             session, actor, container.credentials, container.github.tokens, connection_id

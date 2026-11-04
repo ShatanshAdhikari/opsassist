@@ -36,6 +36,8 @@ class RegisterServerRequest(RequestBody):
     def _target_matches_kind(self) -> RegisterServerRequest:
         if self.kind is ServerKind.GITHUB:
             raise ValueError("GitHub servers are created through /connections/github")
+        if self.kind is ServerKind.GMAIL:
+            raise ValueError("Gmail servers are created by connecting a mailbox")
         needs_url = self.kind is ServerKind.MCP_HTTP
         if needs_url != (self.url is not None) or needs_url == (self.stdio_name is not None):
             raise ValueError("mcp_http takes url; mcp_stdio takes stdio_name")
@@ -229,6 +231,7 @@ async def list_tools(ctx: WorkspaceDep) -> list[ToolAdminOut] | list[ToolOut]:
         ToolOut.model_validate(tool)
         for tool, server in pairs
         if registry.not_callable_reason(tool, server) is None
+        and registry.usable_by(server, ctx.user.id)
     ]
 
 

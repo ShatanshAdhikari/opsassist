@@ -2,17 +2,26 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, api, errorMessage, type Me } from "./api";
 import { Assistant } from "./screens/Assistant";
+import { Integrations } from "./screens/Integrations";
 import { Knowledge } from "./screens/Knowledge";
 import { Login } from "./screens/Login";
 
-type Screen = "assistant" | "knowledge";
+type Screen = "assistant" | "knowledge" | "integrations";
+
+const initialQuery = new URLSearchParams(window.location.search);
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [state, setState] = useState<"loading" | "anonymous" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [screen, setScreen] = useState<Screen>("assistant");
+  const [screen, setScreen] = useState<Screen>(initialQuery.get("screen") === "integrations" ? "integrations" : "assistant");
+  const [signInResult] = useState(initialQuery.get("gmail"));
+
+  useEffect(() => {
+    // Returning from Google. Tidy the address so a reload does not repeat the message.
+    if (initialQuery.has("gmail")) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -66,6 +75,11 @@ export function App() {
           <button type="button" className={screen === "knowledge" ? "tab active" : "tab"} aria-current={screen === "knowledge" ? "page" : undefined} onClick={() => setScreen("knowledge")}>
             Knowledge
           </button>
+          {workspace && workspace.role !== "viewer" && (
+            <button type="button" className={screen === "integrations" ? "tab active" : "tab"} aria-current={screen === "integrations" ? "page" : undefined} onClick={() => setScreen("integrations")}>
+              Integrations
+            </button>
+          )}
         </nav>
         <div className="topbar-right">
           {me.workspaces.length > 0 && (
@@ -91,6 +105,8 @@ export function App() {
           <p className="center muted">You are not a member of any workspace. Ask an administrator to add you.</p>
         ) : screen === "assistant" ? (
           <Assistant key={workspace.id} workspaceId={workspace.id} />
+        ) : screen === "integrations" && workspace.role !== "viewer" ? (
+          <Integrations key={workspace.id} workspaceId={workspace.id} role={workspace.role} signInResult={signInResult} />
         ) : (
           <Knowledge key={workspace.id} workspaceId={workspace.id} role={workspace.role} />
         )}

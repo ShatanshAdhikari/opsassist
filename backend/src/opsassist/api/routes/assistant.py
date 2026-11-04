@@ -57,7 +57,9 @@ async def create_conversation(
 async def list_messages(conversation_id: uuid.UUID, ctx: WorkspaceDep) -> list[MessageOut]:
     ctx.require(Permission.KNOWLEDGE_QUERY)
     async with ctx.tx() as session:
-        views = await service.list_messages(session, ctx.workspace_id, ctx.user.id, conversation_id)
+        views = await service.list_messages(
+            session, ctx.workspace_id, ctx.user.id, ctx.role, conversation_id
+        )
     return [_message_out(view) for view in views]
 
 
@@ -68,6 +70,7 @@ async def ask(conversation_id: uuid.UUID, body: AskRequest, ctx: WorkspaceDep) -
         ctx.container,
         workspace_id=ctx.workspace_id,
         user_id=ctx.user.id,
+        role=ctx.role,
         conversation_id=conversation_id,
         question=body.question,
     )

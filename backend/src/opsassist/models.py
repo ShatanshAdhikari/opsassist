@@ -352,6 +352,24 @@ class Chunk(Base):
     )
 
 
+class OAuthState(Base):
+    """One sign-in in progress. No RLS: the callback finds the workspace from this row.
+
+    Only a hash of the state is stored. The verifier is single-use, expires in minutes, and is
+    useless without the authorization code.
+    """
+
+    __tablename__ = "oauth_states"
+    __table_args__ = (Index("ix_oauth_states_expires", "expires_at"),)
+
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[uuid.UUID] = _fk("users.id")
+    workspace_id: Mapped[uuid.UUID] = _fk("workspaces.id")
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    code_verifier: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 # --- Connections and credentials (RLS by workspace) --------------------------------------
 
 
@@ -375,13 +393,28 @@ class StoredCredential(Base):
 
 
 class IntegrationConnection(Base):
-    """A workspace's link to an external system. `config` holds settings, never secrets."""
+    """A link to an external system. `config` holds settings, never secrets.
+
+    With `owner_user_id` set it is one person's, such as a mailbox, and nobody else may use it.
+    Without, it is shared across the workspace.
+    """
 
     __tablename__ = "integration_connections"
-    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name"),
+        Index(
+            "uq_connections_owner_provider",
+            "workspace_id",
+            "owner_user_id",
+            "provider",
+            unique=True,
+            postgresql_where=text("owner_user_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     workspace_id: Mapped[uuid.UUID] = _fk("workspaces.id")
+    owner_user_id: Mapped[uuid.UUID | None] = _fk("users.id", nullable=True)
     provider: Mapped[str] = mapped_column(String(30), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
@@ -404,13 +437,16 @@ class ToolServer(Base):
             "(kind = 'mcp_stdio' AND stdio_name IS NOT NULL AND url IS NULL "
             "AND connection_id IS NULL) OR "
             "(kind = 'github' AND connection_id IS NOT NULL AND url IS NULL "
-            "AND stdio_name IS NULL)",
+            "AND stdio_name IS NULL) OR "
+            "(kind = 'gmail' AND connection_id IS NOT NULL AND url IS NULL "
+            "AND stdio_name IS NULL AND owner_user_id IS NOT NULL)",
             name="target_matches_kind",
         ),
     )
 
     id: Mapped[uuid.UUID] = _pk()
     workspace_id: Mapped[uuid.UUID] = _fk("workspaces.id")
+    owner_user_id: Mapped[uuid.UUID | None] = _fk("users.id", nullable=True)
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)

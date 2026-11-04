@@ -121,6 +121,16 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.88rem;
 .grounding-help, .grounding-model { color: var(--muted); }
 .grounding-notes { width: 100%; color: var(--warn-text); }
 .sources { border-top: 1px solid var(--border); margin-top: 0.75rem; }
+.integrations { padding: 1rem clamp(1rem, 4vw, 3rem); max-width: 48rem; overflow: auto; }
+.integration-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; overflow-wrap: anywhere; }
+.integration-card header { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.integration-card .row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
+.integration-card .confirm { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin: 0.5rem 0; }
+.integration-card .danger { background: var(--bad-bg); color: var(--bad-text); }
+.tool-list { list-style: none; padding: 0; }
+.tool-list li { border-top: 1px solid var(--border); padding: 0.6rem 0; }
+.notice-good { color: var(--good-text, inherit); }
+.tool-calls { border-top: 1px solid var(--border); margin-top: 0.75rem; overflow-wrap: anywhere; }
 .source-link { background: transparent; color: var(--text); font-weight: 400; text-align: left; padding: 0.15rem 0; }
 .source-meta { color: var(--muted); font-size: 0.85rem; }
 .ask { display: flex; gap: 0.5rem; padding: 0.75rem clamp(1rem, 4vw, 3rem); border-top: 1px solid var(--border); background: var(--surface); }

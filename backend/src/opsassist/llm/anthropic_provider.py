@@ -26,7 +26,10 @@ class AnthropicLLMProvider:
             client = anthropic.AsyncAnthropic(api_key=api_key, timeout=timeout)
         self._client = client
 
-    async def generate(self, *, system: str, user: str, max_tokens: int) -> GenerationResult:
+    async def generate(
+        self, *, system: str, user: str, max_tokens: int, json_output: bool = False
+    ) -> GenerationResult:
+        """`json_output` is not sent: the prompt asks for JSON and the caller validates it."""
         import anthropic
 
         request: dict[str, Any] = {

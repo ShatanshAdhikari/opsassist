@@ -7,8 +7,44 @@ const STATUS: Record<GroundingStatus, { label: string; tone: "good" | "warn" | "
   extractive: { label: "Excerpts only", tone: "neutral", help: "No model is configured. These are retrieved excerpts, not a generated answer." },
   no_evidence: { label: "No source found", tone: "neutral", help: "Nothing in the sources you can access answers this." },
   model_unavailable: { label: "Model unavailable", tone: "bad", help: "No answer was generated. These are the excerpts found." },
+  budget_exceeded: { label: "Limit reached", tone: "bad", help: "This question hit its time or token limit, so no answer was generated. These are the excerpts found." },
   withheld: { label: "Withheld", tone: "bad", help: "A source of this answer was deleted or your access to it ended." },
 };
+
+const TOOL_CALL_STATUS: Record<string, string> = {
+  succeeded: "Returned data",
+  tool_error: "Reported an error",
+  failed: "Did not complete",
+  denied: "Refused",
+  skipped: "Not run",
+};
+
+/** A short name for where a citation came from, for labels and buttons. */
+export function citationName(citation: Citation): string {
+  return (citation.kind === "tool" ? citation.tool_id : citation.document_title) ?? "unavailable source";
+}
+
+function ToolCalls({ grounding }: { grounding: Grounding }) {
+  if (grounding.tool_calls.length === 0) return null;
+  return (
+    <div className="tool-calls">
+      <h3>Live systems checked</h3>
+      <ul>
+        {grounding.tool_calls.map((call, index) => (
+          <li key={`${call.tool_id}-${index}`}>
+            <span className={`badge badge-${call.status === "succeeded" ? "good" : "bad"}`}>
+              {TOOL_CALL_STATUS[call.status] ?? call.status}
+            </span>{" "}
+            {call.tool_id}
+            <span className="source-meta"> {JSON.stringify(call.arguments)}</span>
+            {call.fetched_at && <span className="source-meta"> · fetched {new Date(call.fetched_at).toLocaleString()}</span>}
+            {call.code && <span className="source-meta"> · {call.code}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 const MARKER_SPLIT = /(\[S\d+\])/;
 const IS_MARKER = /^\[S\d+\]$/;
@@ -27,7 +63,7 @@ export function AnswerText({ text, citations, onCite }: AnswerTextProps) {
       {text.split(MARKER_SPLIT).map((part, index) => {
         const citation = IS_MARKER.test(part) ? byMarker.get(part.slice(1, -1)) : undefined;
         if (!citation) return <span key={index}>{part}</span>;
-        const where = citation.document_title ?? "unavailable source";
+        const where = citationName(citation);
         return (
           <button
             key={index}
@@ -99,6 +135,7 @@ export function MessageView({ message, onCite }: MessageViewProps) {
     <div className="message message-assistant">
       {message.grounding && <GroundingBadge grounding={message.grounding} />}
       <AnswerText text={message.content} citations={message.citations} onCite={onCite} />
+      {message.grounding && <ToolCalls grounding={message.grounding} />}
       {cited.length > 0 && (
         <div className="sources">
           <h3>Sources</h3>
@@ -109,6 +146,12 @@ export function MessageView({ message, onCite }: MessageViewProps) {
                   <span className="cite-chip-static">{citation.marker}</span>{" "}
                   {citation.access_revoked ? (
                     "Source no longer available"
+                  ) : citation.kind === "tool" ? (
+                    <>
+                      {citation.tool_id}
+                      <span className="source-meta"> · live data, fetched {citation.fetched_at ? new Date(citation.fetched_at).toLocaleString() : "at an unknown time"}</span>
+                      {citation.truncated && <span className="badge badge-warn"> Incomplete</span>}
+                    </>
                   ) : (
                     <>
                       {citation.document_title}

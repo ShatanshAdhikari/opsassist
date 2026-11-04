@@ -13,6 +13,8 @@ from opsassist.db import SessionFactory, create_engine, create_session_factory
 from opsassist.identity.service import AuthService, SlidingWindowLimiter
 from opsassist.integrations.github_client import InstallationTokens
 from opsassist.integrations.github_provider import GitHubDeps
+from opsassist.integrations.gmail_client import AccessTokens
+from opsassist.integrations.gmail_provider import GmailDeps
 from opsassist.knowledge.blobs import BlobStore, LocalBlobStore
 from opsassist.llm.base import EmbeddingProvider, LLMProvider
 from opsassist.llm.factory import build_embedding_provider, build_llm_provider
@@ -33,6 +35,7 @@ class Container:
     tools: ToolGateway
     credentials: CredentialStore
     github: GitHubDeps
+    gmail: GmailDeps
 
     async def close(self) -> None:
         await self.engine.dispose()
@@ -45,6 +48,7 @@ def build_container(settings: Settings) -> Container:
         KeyRing(settings.credential_keys, settings.credential_active_key_id)
     )
     github = GitHubDeps(settings, factory, credentials, InstallationTokens())
+    gmail = GmailDeps(settings, factory, credentials, AccessTokens())
     return Container(
         settings=settings,
         engine=engine,
@@ -54,7 +58,8 @@ def build_container(settings: Settings) -> Container:
         embedder=build_embedding_provider(settings),
         llm=build_llm_provider(settings),
         question_limiter=SlidingWindowLimiter(settings.questions_per_minute, 60),
-        tools=ToolGateway(settings, factory, build_provider_factory(settings, github)),
+        tools=ToolGateway(settings, factory, build_provider_factory(settings, github, gmail)),
         credentials=credentials,
         github=github,
+        gmail=gmail,
     )

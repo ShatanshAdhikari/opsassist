@@ -2,13 +2,16 @@
 
 Run with: uv run pytest -m live_github tests/integration/test_github_live.py -v
 
-The one request that is not a read posts an empty issue title. GitHub refuses that with 422 if the
-token could write, so nothing is created either way, and a token that truly cannot write gets 403.
+The one request that is not a read posts a label with an empty name, which creates nothing whatever
+the token can do: 403 means no write permission, and 422 would mean it has one. Issue creation is no
+use for this, because GitHub validates that body first and answers 422 to a read-only token as well.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -20,10 +23,13 @@ import pytest_asyncio
 from opsassist.container import build_container
 from opsassist.credentials.crypto import generate_key
 from opsassist.integrations.github_client import (
+    READ_ONLY_PERMISSIONS,
     GitHubConnection,
     InstallationTokens,
+    _app_jwt,
     new_http_client,
 )
+from opsassist.llm.ollama import OllamaLLMProvider
 from opsassist.models import Role
 from tests.conftest import Harness, make_settings
 
@@ -43,8 +49,15 @@ pytestmark = [
 
 @pytest_asyncio.fixture
 async def live(
+    live_env: tuple[Harness, httpx.AsyncClient, str, uuid.UUID],
+) -> tuple[httpx.AsyncClient, str]:
+    return live_env[1], live_env[2]
+
+
+@pytest_asyncio.fixture
+async def live_env(
     clean_database: None, tmp_path: Path
-) -> AsyncIterator[tuple[httpx.AsyncClient, str]]:
+) -> AsyncIterator[tuple[Harness, httpx.AsyncClient, str, uuid.UUID]]:
     settings = make_settings(
         tmp_path, credential_keys={"k1": generate_key()}, credential_active_key_id="k1"
     )
@@ -78,7 +91,7 @@ async def live(
                 "enabled": True,
             },
         )
-    yield client, base
+    yield harness, client, base, tenant.workspace_id
     await harness.close()
 
 
@@ -132,6 +145,41 @@ async def test_token_really_cannot_write_or_reach_other_repositories(tmp_path: P
         names = [item["full_name"].lower() for item in visible.json()["repositories"]]
         assert names == [REPO.lower()]
 
-        # Empty title: a token able to write gets 422 and creates nothing.
-        write = await http.post(f"/repos/{REPO}/issues", headers=headers, json={"title": ""})
+        write = await http.post(f"/repos/{REPO}/labels", headers=headers, json={"name": ""})
         assert write.status_code == 403, f"expected 403, got {write.status_code}"
+
+        # GitHub's own statement of what a token issued this way holds.
+        issued = await http.post(
+            f"/app/installations/{INSTALLATION}/access_tokens",
+            headers={"Authorization": f"Bearer {_app_jwt(connection)}"},
+            json={"repositories": [REPO.split("/", 1)[1]], "permissions": READ_ONLY_PERMISSIONS},
+        )
+        assert issued.status_code == 201, issued.status_code
+        assert set(issued.json()["permissions"].values()) == {"read"}
+
+
+async def test_real_question_is_answered_from_real_github_data(
+    live_env: tuple[Harness, httpx.AsyncClient, str, uuid.UUID],
+) -> None:
+    """One run with a real local model. A weak model can fail this with no code being wrong.
+
+    Needs Ollama with llama3. Set OLLAMA_NUM_GPU=0 on a machine whose GPU garbles output.
+    """
+    harness, client, _base, workspace_id = live_env
+    gpu = os.environ.get("OLLAMA_NUM_GPU")
+    harness.container.llm = OllamaLLMProvider(
+        "http://localhost:11434", "llama3", 600.0, int(gpu) if gpu else None
+    )
+    harness.container.settings.planner_timeout_seconds = 600
+    harness.container.settings.assistant_max_seconds = 1200
+    answer = await harness.ask(
+        client, workspace_id, f"Get pull request number 1 in {REPO}. What is its title and state?"
+    )
+    print(json.dumps(answer, indent=2, default=str))
+    calls = answer["grounding"]["tool_calls"]
+    assert calls, "the model planned no call"
+    assert calls[0]["status"] == "succeeded", calls
+    assert calls[0]["fetched_at"]
+    cited = [citation for citation in answer["citations"] if citation["kind"] == "tool"]
+    assert cited, answer["content"]
+    assert cited[0]["fetched_at"]

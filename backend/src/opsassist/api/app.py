@@ -13,6 +13,7 @@ from opsassist.api.routes import (
     assistant,
     auth,
     connections,
+    gmail,
     health,
     knowledge,
     tools,
@@ -48,6 +49,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.add_middleware(OriginCheckMiddleware, allowed_origins=resolved.allowed_origins)
     app.add_middleware(RequestContextMiddleware)
 
-    for module in (health, auth, workspaces, knowledge, assistant, tools, connections):
+    # Gmail before connections: its fixed paths must win over `/connections/{connection_id}`.
+    for module in (health, auth, workspaces, knowledge, assistant, tools, gmail, connections):
         app.include_router(module.router)
     return app
