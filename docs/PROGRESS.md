@@ -2,6 +2,39 @@
 
 Records what was verified, not what was intended. Newest first.
 
+## 2026-11-05: GitHub connection screen and clearer page intros, branch `feat/planner`
+
+### What changed
+
+- `web/src/screens/GitHubConnections.tsx`, on the Integrations screen, for owners and admins: connect
+  a GitHub App (the key is chosen as a file and never displayed), check, find tools, change
+  repositories, replace the key, remove, and approve tools one by one or all at once. Members see a
+  note that an administrator connects GitHub.
+- Approval from the screen is offered only for tools whose provider marks them read-only and not
+  destructive. For a changed tool, the pending definition is judged. The backend still refuses to run
+  anything that is not read-only at risk 0, whatever was approved.
+- `ServerOut` now includes `connection_id`, so the screen pairs each connection with its tools.
+- Assistant, Knowledge and Integrations pages now say what each is for. The Assistant's empty state
+  no longer claims each question is independent, which stopped being true with follow-up context.
+- The dev database was upgraded from `0001` to `0004`, and `.env` now has the Google client,
+  `CREDENTIAL_KEYS` and `OLLAMA_NUM_GPU=0`. The owner connected Gmail through the screen.
+
+### Verified results
+
+| Check | Result |
+| --- | --- |
+| Web `tsc --noEmit`, `eslint` | clean |
+| Web component tests, including 13 new for GitHub | 42 passed |
+| `ruff check`, `ruff format --check`, `mypy --strict` | clean (71 source files) |
+| `test_github.py` and `test_tools.py`, Windows, Python 3.14 | 113 passed |
+| Gmail connected by the owner through the screen, real Google | connection row present, server healthy |
+
+### Not verified
+
+- The GitHub screen against a real GitHub App in a browser. The owner has not connected it yet.
+- A real question answered from real mail.
+- Full backend suite and the Linux run, on this change.
+
 ## 2026-11-04: Read-only Gmail, branch `feat/planner`
 
 ### What changed

@@ -66,6 +66,8 @@ class ServerOut(ResponseBody):
     slug: str
     name: str
     kind: str
+    # Set for servers backed by a connection, such as GitHub, so a screen can pair the two.
+    connection_id: uuid.UUID | None
     url: str | None
     stdio_name: str | None
     enabled: bool

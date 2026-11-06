@@ -4,11 +4,33 @@ Written 2026-11-04. Start here when resuming. This is a snapshot, so check it ag
 `git log` and `gh pr view 1` before relying on it. The full requirements are in `CLAUDE.md`, and
 verified results are in `docs/PROGRESS.md`.
 
+## Resume here
+
+Update 2026-11-05: steps 1 and 2 below are done, and Gmail is connected through the screen. A
+GitHub connection screen and clearer page intros are built and uncommitted (see `docs/PROGRESS.md`).
+Next: the owner restarts the API, connects GitHub on Integrations, and asks real questions.
+
+Waiting on the owner. On branch `feat/planner` at `4f38fd6`, committed locally and **not pushed**.
+This handoff update is uncommitted.
+
+1. **Gmail client:** the owner creates the OAuth client (`docs/GMAIL_SETUP.md`, section 1) and adds
+   `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` to `.env`.
+2. **Which database:** upgrade the dev database, recommended, or use a throwaway one. The dev database
+   is at `0001`, has no known password, and upgrading means stopping the owner's app. Ask first. The
+   owner sets any new password. Also add `CREDENTIAL_KEYS`, `CREDENTIAL_ACTIVE_KEY_ID` and
+   `OLLAMA_NUM_GPU=0` to `.env`.
+3. **Then:** the owner clicks through Google consent. Check the Integrations screen in a browser, and
+   ask a real question of real mail. Record the results in `docs/PROGRESS.md`.
+4. **History push, before pushing `feat/planner`:** otherwise the old commits and their co-author
+   trailers go back to GitHub. See the Git section.
+5. **Open a PR only when asked.** Then Calendar.
+
 ## Where things stand
 
 OpsAssist is an auditable AI operations platform. A person can upload documents and get cited,
 permission-filtered answers in the UI. On `feat/planner`, the assistant can also use approved
-read-only tools and cite their live results. Tools still have no admin screen.
+read-only tools and cite their live results, and a person can connect their own Gmail. Screens for
+GitHub connections and for tools outside Gmail are still missing.
 
 | Piece | State | Proven against |
 | --- | --- | --- |
@@ -27,11 +49,19 @@ read-only tools and cite their live results. Tools still have no admin screen.
 - Merging did not settle ADR-0012 or prove real GitHub behaviour: see the decisions below.
 - **Attribution rule from the owner: no AI assistant named in commits, branches or PRs,** including
   co-author trailers and footers, whatever a tool's default suggests.
-- **History cleanup may be pending.** PR bodies were cleaned. Commit messages were rewritten in a
-  separate clone, but the force-push was blocked by a permission check and left for the owner. If
-  `git log main` still shows `151e1b5`, it has not run. Backup bundle:
-  `%LOCALAPPDATA%\opsassist\history-backup-2026-11-04.bundle`. Old commits stay reachable through
-  `refs/pull/*` on GitHub, and removing those needs GitHub Support.
+- **History cleanup is pending.** The owner asked for it. PR bodies are clean. Commit messages were
+  rewritten in a separate clone, with trees verified identical, but the force-push was blocked by a
+  permission check and left for the owner. If `git ls-remote origin main` still shows `151e1b5`, it
+  has not run. The owner runs this at the prompt. It force-pushes `main` and both feature branches,
+  then rebases `feat/planner` onto the result:
+
+  ```text
+  ! bash "$LOCALAPPDATA/opsassist/history-rewrite/push_rewrite.sh"
+  ```
+
+  Backup bundle: `%LOCALAPPDATA%\opsassist\history-backup-2026-11-04.bundle`. Old commits stay
+  reachable through `refs/pull/*` on GitHub, and removing those needs GitHub Support. `CLAUDE.md` and
+  a few docs still contain the word. The owner has not asked for those to change.
 
 ### Verification
 
@@ -40,20 +70,22 @@ and passes. Set `GITHUB_TEST_APP_ID`, `_INSTALLATION_ID`, `_PRIVATE_KEY_FILE` an
 
 ## Decisions waiting on the owner
 
-1. **GitHub App.** Created: app ID 5613304, installation 178596510. Ask for the `.pem` **path**, never
-   its contents. It is installed on all the owner's repositories, and limiting it to `opsassist` is
-   recommended. The key file is gitignored but sits in the repo root inside OneDrive, so it should
-   move out. An earlier key was pasted into a session by accident, so confirm that one is deleted.
+1. **GitHub App.** Created: app ID 5613304, installation 178596510, key at `key.pem` in the repo root.
+   It is installed on all the owner's repositories, though tokens are limited to the connection's
+   list. The owner has said the key's handling is fine, so do not raise it again.
 2. **ADR-0012.** Any workspace member can read every repo on a connection, even a private one they
    could not open on GitHub. Recommended: accept for now with one workspace, and add per-person
    checks before repos need different audiences. Not yet agreed.
 3. **Google account.** Decided: personal Gmail, OAuth app in Testing mode, local model. Refresh tokens
    expire after 7 days, accepted. Still needed: the owner creates the OAuth client from
-   `docs/GMAIL_SETUP.md`. Then run `tests/integration/test_gmail_live.py`.
+   `docs/GMAIL_SETUP.md`. `tests/integration/test_gmail_live.py` is optional, since it needs a refresh
+   token saved to a file. Going through the screen tests the real flow.
 4. ADRs 0001 to 0014 are still provisional, pending the owner's review. ADR-0013 needs a real look:
    one tool result cannot feed another call, by design, to keep injected content away from tools.
-5. **Stronger model.** llama3 chose the exact tools in 7 of 12 cases. It proves the design but is
-   not good enough to rely on. An external model needs `EXTERNAL_MODEL_DATA_APPROVED=true`.
+5. **Stronger model.** llama3 chose the exact tools in 7 of 12 cases, and takes about 6 minutes per
+   question on CPU. **Decided 2026-11-05: free only, no money spent on this project.** Paid external
+   models are out, so the Anthropic adapter stays unused. Free options: update Ollama in case that
+   fixes the GPU garbling, or try other free local models with better tool calling.
 
 Open product decisions are also listed in `docs/IMPLEMENTATION_PLAN.md`.
 
@@ -67,7 +99,7 @@ Open product decisions are also listed in `docs/IMPLEMENTATION_PLAN.md`.
 6. Phase 4 approvals. **Re-evaluate Temporal first** (ADR-0003). Write tools stay refused by
    `not_callable_reason` in `tools/registry.py` until then.
 
-Screens are also missing: integrations, members, audit, grants.
+Screens are also missing: GitHub connections, general tool review, members, audit, grants.
 
 ## Running it
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, api, errorMessage, type GmailStatus, type Role, type ToolAdmin } from "../api";
+import { GitHubConnections } from "./GitHubConnections";
 
 /** What came back from Google's sign-in page. Fixed codes, so nothing from the URL is displayed. */
 const SIGN_IN_RESULT: Record<string, { text: string; good: boolean }> = {
@@ -109,6 +110,10 @@ export function Integrations({ workspaceId, role, signInResult }: Props) {
   return (
     <section className="integrations" aria-label="Integrations">
       <h1>Integrations</h1>
+      <p className="page-intro">
+        Connect the systems the assistant reads live, such as your mailbox and GitHub. Every connection is read-only, and the assistant
+        can use a tool only after an administrator approves it.
+      </p>
       {result && (
         <p role="status" className={result.good ? "notice-good" : "error"}>
           {result.text}
@@ -220,6 +225,8 @@ export function Integrations({ workspaceId, role, signInResult }: Props) {
           )}
         </article>
       )}
+
+      <GitHubConnections workspaceId={workspaceId} isAdmin={isAdmin} />
     </section>
   );
 }

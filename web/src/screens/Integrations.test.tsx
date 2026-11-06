@@ -17,6 +17,7 @@ const connected: GmailStatus = {
 
 const pendingTool: ToolAdmin = {
   id: "t1",
+  server_id: "s-gmail",
   tool_id: "gmail.threads_search",
   name: "threads_search",
   description: "Search this person's mailbox.",
@@ -32,6 +33,8 @@ const pendingTool: ToolAdmin = {
 function show(status: Partial<GmailStatus> = {}, tools: ToolAdmin[] = [], signInResult: string | null = null, role: "owner" | "member" = "owner") {
   vi.spyOn(api, "gmailStatus").mockResolvedValue({ ...connected, ...status });
   vi.spyOn(api, "listTools").mockResolvedValue(tools);
+  vi.spyOn(api, "listConnections").mockResolvedValue([]);
+  vi.spyOn(api, "listToolServers").mockResolvedValue([]);
   render(<Integrations workspaceId="w1" role={role} signInResult={signInResult} />);
 }
 

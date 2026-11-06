@@ -61,7 +61,13 @@ decrypt them.
 
 ## 5. Connect
 
-There is no screen for this yet. With an owner or admin session, the API calls are:
+As an owner or admin, open **Integrations** and choose **Connect GitHub**. Enter the App ID, the
+installation ID and the repositories, one per line as `owner/name`, then choose the `.pem` key file.
+The screen saves the connection, finds its tools and checks it, and reports each step. Then approve
+the read-only tools, or choose **Approve all**. The assistant cannot use a tool until it is approved.
+Only tools the provider marks read-only can be approved there.
+
+The same steps through the API, with an owner or admin session:
 
 1. `POST /api/v1/workspaces/{id}/connections/github` with `slug`, `name`, `app_id`,
    `installation_id`, `private_key` (the file's contents) and `repositories` (`["owner/name"]`).

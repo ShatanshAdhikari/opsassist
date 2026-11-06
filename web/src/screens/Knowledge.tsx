@@ -180,13 +180,28 @@ export function Knowledge({ workspaceId, role }: { workspaceId: string; role: Ro
 
   return (
     <div className="knowledge">
-      <h1>Knowledge sources</h1>
+      <h1>Knowledge</h1>
+      <p className="page-intro">
+        Documents the assistant can search when it answers, such as policies, runbooks and meeting notes. Live systems like email and
+        GitHub belong on the Integrations page instead.
+      </p>
+      <ol className="steps">
+        <li>
+          <strong>Create a source</strong>: a folder that groups related documents and sets who can read them.
+        </li>
+        <li>
+          <strong>Upload files</strong> to it: Markdown, text or PDF. Each is indexed in the background.
+        </li>
+        <li>
+          <strong>Ask on the Assistant page.</strong> Answers cite the exact document and section.
+        </li>
+      </ol>
       {error && <p role="alert" className="error">{error}</p>}
       {canWrite && (
         <form className="source-form card" onSubmit={create}>
           <label>
-            Name
-            <input required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
+            New source name
+            <input required placeholder="For example: Engineering runbooks" maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           <label>
             Who can read it
