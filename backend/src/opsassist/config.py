@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     embedding_timeout_seconds: float = 60.0
     embedding_batch_size: int = 32
     ollama_url: str = "http://localhost:11434"
+    # Layers to run on the GPU. 0 forces CPU. Unset lets Ollama decide.
+    ollama_num_gpu: int | None = None
+    # Context window in tokens. Ollama's own default is small and it truncates silently.
+    ollama_num_ctx: int = 16_384
     anthropic_api_key: SecretStr | None = None
     external_model_data_approved: bool = False
 
@@ -68,6 +72,16 @@ class Settings(BaseSettings):
     retrieval_min_term_coverage: float = 0.6
     max_question_chars: int = 4000
     stale_after_days: int = 365
+
+    # Limits for one question, across planning, tool calls and the answer (ADR-0013).
+    assistant_max_seconds: float = 300.0
+    assistant_max_tokens_per_question: int = 24_000
+    assistant_history_turns: int = 3
+    planner_timeout_seconds: float = 120.0
+    planner_max_tool_calls: int = 4
+    planner_max_output_tokens: int = 1000
+    planner_max_catalog_chars: int = 12_000
+    assistant_max_tool_context_chars: int = 16_000
 
     worker_poll_seconds: float = 1.0
     worker_lease_seconds: int = 120
@@ -96,6 +110,19 @@ class Settings(BaseSettings):
     credential_active_key_id: str | None = None
     github_api_url: str = "https://api.github.com"
     github_max_response_bytes: int = 10 * 1024 * 1024
+
+    # Gmail, read-only. docs/GMAIL_SETUP.md explains how to get the client.
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: SecretStr | None = None
+    google_oauth_redirect_uri: str = "http://localhost:5173/api/v1/oauth/google/callback"
+    google_oauth_authorize_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    google_oauth_token_url: str = "https://oauth2.googleapis.com/token"  # noqa: S105 - a URL
+    google_oauth_revoke_url: str = "https://oauth2.googleapis.com/revoke"
+    gmail_api_url: str = "https://gmail.googleapis.com"
+    gmail_max_response_bytes: int = 25 * 1024 * 1024
+    # Mail is more private than other sources, so sending it to an external model is its own
+    # decision, on top of EXTERNAL_MODEL_DATA_APPROVED.
+    external_model_mail_approved: bool = False
 
     @model_validator(mode="after")
     def _check_production_safety(self) -> Settings:

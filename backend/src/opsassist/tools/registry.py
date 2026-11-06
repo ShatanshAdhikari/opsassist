@@ -79,6 +79,11 @@ def not_callable_reason(tool: ToolDefinition, server: ToolServer) -> str | None:
     return None
 
 
+def usable_by(server: ToolServer, user_id: uuid.UUID) -> bool:
+    """A personal server, such as a mailbox, is its owner's alone. Admins get no exception."""
+    return server.owner_user_id is None or server.owner_user_id == user_id
+
+
 async def get_server(session: AsyncSession, server_id: uuid.UUID) -> ToolServer:
     server = await session.get(ToolServer, server_id)
     if server is None:

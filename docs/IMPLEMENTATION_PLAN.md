@@ -57,10 +57,14 @@ Acceptance: unknown fields rejected; disabled or changed tools not callable; out
 reported; invocation audited; injected tool output cannot trigger any action; live PR
 status answer cites API with timestamp.
 
-Status of those criteria: all met against mock and fake servers. Live PR status with API timestamp
-is implemented, but needs `docs/GITHUB_SETUP.md` run against real GitHub to be proven. The
-injection criterion holds trivially for now, since no model or workflow consumes tool output. It
-must be retested when the planner arrives.
+Status of those criteria: all met against mock and fake servers. Against real GitHub, the tools,
+down-scoping and read-only token are proven. Live PR status reached the answer with its API
+timestamp only as a cited excerpt so far, because llama3 wrote no citations in that run. The
+injection criterion was retested when the planner arrived, with a model now reading tool output:
+it holds because planning finishes before that output is read (ADR-0013).
+
+Planner, conversation context and read-only Gmail are implemented on `feat/planner`, with Gmail
+tested against a fake Google only. Calendar and scheduled tracking are not started.
 
 ### Phase 4: Controlled actions
 Workflow state machine, approval inbox, policy engine, idempotent execution, read-back

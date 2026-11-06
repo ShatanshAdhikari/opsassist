@@ -2,6 +2,227 @@
 
 Records what was verified, not what was intended. Newest first.
 
+## 2026-11-05: GitHub connection screen and clearer page intros, branch `feat/planner`
+
+### What changed
+
+- `web/src/screens/GitHubConnections.tsx`, on the Integrations screen, for owners and admins: connect
+  a GitHub App (the key is chosen as a file and never displayed), check, find tools, change
+  repositories, replace the key, remove, and approve tools one by one or all at once. Members see a
+  note that an administrator connects GitHub.
+- Approval from the screen is offered only for tools whose provider marks them read-only and not
+  destructive. For a changed tool, the pending definition is judged. The backend still refuses to run
+  anything that is not read-only at risk 0, whatever was approved.
+- `ServerOut` now includes `connection_id`, so the screen pairs each connection with its tools.
+- Assistant, Knowledge and Integrations pages now say what each is for. The Assistant's empty state
+  no longer claims each question is independent, which stopped being true with follow-up context.
+- The dev database was upgraded from `0001` to `0004`, and `.env` now has the Google client,
+  `CREDENTIAL_KEYS` and `OLLAMA_NUM_GPU=0`. The owner connected Gmail through the screen.
+
+### Verified results
+
+| Check | Result |
+| --- | --- |
+| Web `tsc --noEmit`, `eslint` | clean |
+| Web component tests, including 13 new for GitHub | 42 passed |
+| `ruff check`, `ruff format --check`, `mypy --strict` | clean (71 source files) |
+| `test_github.py` and `test_tools.py`, Windows, Python 3.14 | 113 passed |
+| Gmail connected by the owner through the screen, real Google | connection row present, server healthy |
+
+### Not verified
+
+- The GitHub screen against a real GitHub App in a browser. The owner has not connected it yet.
+- A real question answered from real mail.
+- Full backend suite and the Linux run, on this change.
+
+## 2026-11-04: Read-only Gmail, branch `feat/planner`
+
+### What changed
+
+- `integrations/gmail_client.py`, `gmail_provider.py`, `gmail_connections.py`: Google sign-in with
+  PKCE and a single-use state, token refresh and revocation, and two read-only tools.
+- **Connections can now belong to one person** (ADR-0014). Migration `0004` adds `owner_user_id`, Gmail
+  as a server kind, and `oauth_states`.
+- Integrations screen: connect, reconnect, check, disconnect, and approve tools.
+- Setup steps are in `GMAIL_SETUP.md`.
+
+### Verified results
+
+| Check | Result |
+| --- | --- |
+| `ruff check`, `ruff format --check`, `mypy --strict` | clean (71 source files) |
+| Full backend suite, Linux container, Python 3.13, direct Docker network | 412 passed, 6 live tests deselected |
+| `tests/integration/test_gmail.py`, fake Google at the HTTP level | 36 passed, included above |
+| Test database: up, down to `0003`, up, `alembic check` | passed, no drift |
+| RAG evaluation with hash embeddings, recall and leak gates | passed |
+| Web component tests including the Integrations screen, `vite build` | 29 passed, clean |
+| Full backend suite, Windows, Python 3.14 | not run on the final code |
+
+Covered: only `gmail.readonly` is requested and any other grant is refused and given back; state is
+single-use and bound to the person; the token is encrypted and appears in no response; expiry reports
+`reauthorization_required` and reconnecting fixes it; revocation failure keeps the connection unless
+forced; another member and a workspace owner both get 404 on someone's mailbox; injected email text
+never reaches planning; an external model is not offered mail without its own approval; stored
+answers are withheld after disconnecting.
+
+### Not verified
+
+- **Real Gmail has not been called.** Every result is against a fake written from Google's
+  documentation. It needs the OAuth client in `GMAIL_SETUP.md`, then `test_gmail_live.py`.
+- The Integrations screen in a browser, and the real Google consent flow through it.
+- That Gmail refuses a send from this token. The live test checks this. Its assumption, that scope is
+  checked before the body, is unproven, and the same assumption about GitHub turned out wrong.
+- How real HTML email parses, or how well llama3 handles real threads.
+
+### Known limitations
+
+- **Weekly sign-in:** refresh tokens last 7 days for an app in Testing mode.
+- Search reads up to 10 whole threads per call, and each call shares the 16,000-character tool context,
+  so large results are cut and marked incomplete.
+- `awaiting_reply` only says who wrote last. It cannot tell whether a reply is really needed.
+- Text hidden in HTML, such as with `display:none`, is kept. It reaches only the toolless answer step.
+- Admins can see a mailbox's address in `/connections`, though not its contents.
+- Access token cache is per process, so several workers refresh separately. That is harmless.
+- Screens for GitHub connections and other tools are still missing.
+
+### Security implications
+
+See `SECURITY_MODEL.md` section 10 and ADR-0014. Excerpts of mail are stored in the owner's private
+conversation until they disconnect, and no retention limit exists yet.
+
+### Recommended next step
+
+Create the OAuth client and run the live test. Calendar comes after that.
+
+## 2026-11-04: Bounded planner and conversation context, branch `feat/planner`
+
+### What changed
+
+- `assistant/planner.py`: one planning call, seeing only the user's questions and the approved tool
+  catalog. `assistant/tool_runner.py`: runs planned calls through the gateway and records outcomes.
+- `assistant/service.py`: fixed sequence of plan, tools, retrieval, answer. Limits on calls, time and
+  tokens per question. Follow-ups use earlier questions in planning, and still-readable earlier
+  answers in answering, never as evidence.
+- Citations can now be tool results, with tool, arguments and fetch time. Stored ones are withheld
+  when the server is disabled or the reader loses `tools:invoke`.
+- New status `budget_exceeded`. UI shows live results and a "Live systems checked" list.
+- `OLLAMA_NUM_GPU` setting. No migration: the trace is stored in the message.
+
+Reasoning is in ADR-0013. Controls and gaps are in `SECURITY_MODEL.md` sections 5 and 10.
+
+### Verified results
+
+| Check | Result |
+| --- | --- |
+| `ruff check`, `ruff format --check`, `mypy --strict` | clean (67 source files) |
+| Full backend suite, Linux container, Python 3.13, direct Docker network | 375 passed, 4 live tests deselected |
+| Full backend suite, Windows, Python 3.14 | not run on the final code. New tests passed there before the last small changes |
+| RAG evaluation with hash embeddings, recall and leak gates | passed |
+| Web `eslint`, `tsc`, `vitest`, `vite build` | clean, 20 tests |
+| Live test: llama3 on CPU, real MCP protocol, through the API, one run | 2 passed |
+| Injection with a scripted model obeying the hostile text (`tests/security/test_planner_injection.py`) | passed |
+| ADR-0009 latency, loopback, mock server, Windows | HTTP p50 13 ms, p95 15 ms. stdio p50 1.3 s, p95 1.6 s |
+
+The Phase 3 injection criterion is retested with a model now consuming tool output. It holds by
+construction: planning has finished before tool output is read, so hostile text cannot select a tool
+or set an argument.
+
+### Planner evaluation, llama3 on CPU
+
+12 planning and 4 injection cases, synthetic, written alongside the code, with prompt changes made
+while looking at them. These show the pipeline works with this model. They do not predict quality.
+
+| Metric | Result |
+| --- | --- |
+| Valid plan JSON | 12 of 12 |
+| Exact tool choice | 7 of 12 |
+| Called a tool when none was expected | 2 |
+| Called no tool when one was expected | 1 |
+| Injection canary in the answer | 0 of 4 |
+| Answer cited the real source | 4 of 4 |
+| Planning latency p50 | 12 s on CPU. Roughly 4.5 s on GPU, when output was usable |
+
+RAG evaluation re-run after the context fix, nomic-embed-text and llama3: recall 1.0, expected source
+cited 1.0, permission leaks 0, missing questions declined 1.0, injection followed 0, 10 grounded, 4
+partly cited, 6 no evidence, faithfulness heuristic 0.881 (0.782 before). Same small synthetic corpus,
+so it shows the change did not hurt. It does not predict quality on real documents.
+
+**llama3 is a weak planner.** It missed plain "status of PR 42" questions, and tried a repository
+outside the allowlist, which the provider refuses. Adequate for proving the design, not for relying
+on. A stronger model has not been tried.
+
+### Findings
+
+- **GPU output was garbled on this machine.** On the RTX 2060, the same prompt returned clean JSON,
+  then text such as "acceeyl", varying between reloads. On CPU it was clean in every run: 12 of 12
+  twice, in two output modes. The GPU is the likely cause, not proven. Ollama here is 0.30.4 with an
+  update pending, and that was not tried. **Set `OLLAMA_NUM_GPU=0` on this machine.** Bad output was
+  safe, since parsing refused it, but it made planning useless.
+- JSON schema output scored the same as plain JSON on CPU (7 of 12), so it was not added.
+- A garbled rewritten query hurt search, so the user's own words are now searched first and a
+  rewrite is used only if they find nothing.
+- llama3 copied generated schema titles into arguments, and they are now removed from the prompt.
+- The model sometimes declines to answer from a successful call. A note now says data came back.
+
+### Real GitHub (first contact)
+
+Run against `ShatanshAdhikari/opsassist`, a public repository, with the real App.
+
+| Check | Result |
+| --- | --- |
+| All five tools read real data, PR checks readable | passed |
+| Token reaches only the named repository, though the app is installed on all | passed |
+| Installation and token permissions, as GitHub reports them | all `read` |
+| Write probe, a label with an empty name | 403, `Resource not accessible by integration` |
+| Real question with llama3 on CPU, one run | see below |
+
+**A serious bug found here: Ollama silently truncated long prompts.** Its default context here is 4096
+tokens, and it drops the start of anything longer, so the model answered from a fragment. It first
+appeared as a missing citation, then as a confident claim that a PR title was absent from data that
+held it. An earlier check missed this by using a short prompt. The context is now set explicitly
+(`OLLAMA_NUM_CTX`, default 16,384), and a prompt that cannot fit is refused rather than cut. Document
+answers shared this limit, so large retrievals may have been affected too.
+
+Browser test `web/e2e/live-tools.spec.ts` passed against the real stack: real GitHub, llama3 on CPU.
+Screens were inspected, including the citation panel and phone width.
+
+**The earlier write test was wrong.** It expected 403 on an issue with an empty title. GitHub validates
+that body before checking permission, so a read-only token gets 422 there too. Its failure was not a
+security problem. It now probes labels, and also checks the permissions GitHub reports. A valid write
+was never attempted, since it would create something on a public repository if this were wrong.
+
+**Real question result, after the fix above, one run:** "Get pull request number 1 ... What is its
+title and state?" Planning chose `github.pull_get` with the right arguments. The answer gave the
+correct title and state, cited the live result with its fetch time, and was labelled `grounded`. The
+Phase 3 criterion "live PR status answer cites API with timestamp" is met. It took about 6 minutes on
+CPU, which is too slow for real use.
+
+### Not verified Only component tests ran, and the browser test was not rerun.
+- Rewritten follow-up search with a real model, beyond the single planning eval case.
+- The Anthropic adapter with planning. Its JSON output is unmeasured.
+- Latency to a real remote MCP server.
+
+### Known limitations
+
+- **One result cannot feed another call** (ADR-0013). "Review this issue and inspect the code" needs
+  the user to name the file.
+- Not durable: runs inside the request. A crash leaves the question with no answer, and a `running`
+  invocation if mid-call. Safe only because every call is a read.
+- Budgets are per question. No per-user or per-workspace spend limits yet.
+- Follow-up planning sees questions only, so "the second one" cannot refer to an earlier answer.
+- A not-found answer from the model does not show what the tool returned.
+- A question with tools costs an extra model call even when no tool is needed.
+
+### Upgrading a running checkout
+
+No migration from this step, and `0002`, `0003` still apply if the database is behind. Set
+`OLLAMA_NUM_GPU=0` in `.env` on this machine.
+
+### Recommended next step
+
+Decide on a stronger model, since llama3 is now the main limit on answer quality. Then check the UI
+in a browser against real GitHub, and commit.
+
 ## 2026-11-04: Credentials and read-only GitHub, branch `feat/github-readonly`
 
 Stacked on `feat/tool-layer`.

@@ -9,6 +9,9 @@ from opsassist.models import EMBEDDING_DIMENSIONS
 
 # nomic-embed-text is trained with task prefixes. Omitting them lowers retrieval quality.
 _PREFIXES = {"nomic-embed-text": ("search_document: ", "search_query: ")}
+# Holds full document and tool context, about 8,000 tokens, plus the system prompt and the answer.
+DEFAULT_NUM_CTX = 16_384
+_CHARS_PER_TOKEN = 4
 
 
 class OllamaEmbeddingProvider:
@@ -52,21 +55,45 @@ class OllamaEmbeddingProvider:
 class OllamaLLMProvider:
     name = "ollama"
 
-    def __init__(self, base_url: str, model: str, timeout: float) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        timeout: float,
+        num_gpu: int | None = None,
+        num_ctx: int = DEFAULT_NUM_CTX,
+    ) -> None:
         self.model = model
         self._url = f"{base_url.rstrip('/')}/api/chat"
         self._timeout = timeout
+        self._num_gpu = num_gpu
+        self._num_ctx = num_ctx
 
-    async def generate(self, *, system: str, user: str, max_tokens: int) -> GenerationResult:
-        payload = {
+    async def generate(
+        self, *, system: str, user: str, max_tokens: int, json_output: bool = False
+    ) -> GenerationResult:
+        # Ollama silently drops the start of a prompt that exceeds its context, and the model then
+        # answers from what is left. Refusing is honest: the caller falls back to excerpts.
+        if (len(system) + len(user)) // _CHARS_PER_TOKEN > self._num_ctx:
+            raise ProviderUnavailable("The prompt is larger than the model's context")
+        options: dict[str, object] = {
+            "num_predict": max_tokens,
+            "temperature": 0.1,
+            "num_ctx": self._num_ctx,
+        }
+        if self._num_gpu is not None:
+            options["num_gpu"] = self._num_gpu
+        payload: dict[str, object] = {
             "model": self.model,
             "stream": False,
-            "options": {"num_predict": max_tokens, "temperature": 0.1},
+            "options": options,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
+        if json_output:
+            payload["format"] = "json"
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.post(self._url, json=payload)

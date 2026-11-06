@@ -263,7 +263,10 @@ async def _connect(harness: Harness) -> tuple[Any, httpx.AsyncClient, str, dict]
     base = f"/api/v1/workspaces/{tenant.workspace_id}"
     response = await client.post(f"{base}/connections/github", json=_connection_body())
     assert response.status_code == 201, response.text
-    return tenant, client, base, response.json()
+    created = response.json()
+    # The screen pairs each connection with its tool server through this field.
+    assert created["tool_server"]["connection_id"] == created["connection"]["id"]
+    return tenant, client, base, created
 
 
 async def _ready(harness: Harness) -> tuple[Any, httpx.AsyncClient, str, dict]:

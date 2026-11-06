@@ -47,7 +47,7 @@ _TRUNCATE = """
     TRUNCATE organizations, users, sessions, audit_events, jobs, workspaces, memberships, groups,
     group_members, knowledge_sources, source_grants, documents, document_versions, chunks,
     conversations, messages, usage_records, tool_servers, tool_definitions, tool_invocations,
-    integration_connections, stored_credentials CASCADE
+    integration_connections, stored_credentials, oauth_states CASCADE
 """
 
 
@@ -104,14 +104,27 @@ class FakeLLM:
 
     def __init__(self) -> None:
         self.prompts: list[str] = []
+        self.plan_prompts: list[str] = []
+        self.max_tokens: list[int] = []
         self.response = "The answer is documented [S1]."
+        self.plan = '{"calls": []}'
         self.error: Exception | None = None
+        self.plan_error: Exception | None = None
+        self.tokens: tuple[int | None, int | None] = (10, 5)
 
-    async def generate(self, *, system: str, user: str, max_tokens: int) -> GenerationResult:
+    async def generate(
+        self, *, system: str, user: str, max_tokens: int, json_output: bool = False
+    ) -> GenerationResult:
+        self.max_tokens.append(max_tokens)
+        if json_output:
+            self.plan_prompts.append(user)
+            if self.plan_error:
+                raise self.plan_error
+            return GenerationResult(self.plan, *self.tokens)
         self.prompts.append(user)
         if self.error:
             raise self.error
-        return GenerationResult(self.response, 10, 5)
+        return GenerationResult(self.response, *self.tokens)
 
 
 class FailingEmbedder:
