@@ -5,9 +5,9 @@ import { MessageView } from "../components/Answer";
 import { CitationPanel } from "../components/CitationPanel";
 
 const SUGGESTIONS = [
-  "Find the owner of this service and locate its runbook.",
-  "What does our policy say about this?",
-  "What was decided about this and why?",
+  "Summarize the emails I received this week that need a reply.",
+  "Which issues are open in our GitHub repository, and which look most urgent?",
+  "What do our uploaded documents say about the release process?",
 ];
 
 export function Assistant({ workspaceId }: { workspaceId: string }) {
@@ -103,8 +103,20 @@ export function Assistant({ workspaceId }: { workspaceId: string }) {
         <div className="messages" aria-live="polite">
           {messages.length === 0 && !pending && (
             <div className="empty">
-              <h2>Ask about your organization's documents</h2>
-              <p className="muted">Answers come only from sources you can access, with citations you can inspect. Questions are answered independently, so include the full context each time.</p>
+              <h2>Ask a question</h2>
+              <p>The assistant answers from two places:</p>
+              <ul className="where-answers-come-from">
+                <li>
+                  <strong>Documents</strong> uploaded on the Knowledge page, such as policies, runbooks and notes.
+                </li>
+                <li>
+                  <strong>Live data</strong> from systems connected on the Integrations page, such as your Gmail or GitHub.
+                </li>
+              </ul>
+              <p className="muted">
+                Each fact links to where it came from, so you can check it. It only reads: it never sends, changes or deletes anything.
+                Follow-up questions in the same conversation can refer to earlier ones.
+              </p>
               <div className="suggestions">
                 {SUGGESTIONS.map((suggestion) => (
                   <button key={suggestion} type="button" className="ghost" onClick={() => setQuestion(suggestion)}>

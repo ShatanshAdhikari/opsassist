@@ -24,7 +24,11 @@ class LLMProvider(Protocol):
     name: str
     model: str
 
-    async def generate(self, *, system: str, user: str, max_tokens: int) -> GenerationResult: ...
+    async def generate(
+        self, *, system: str, user: str, max_tokens: int, json_output: bool = False
+    ) -> GenerationResult:
+        """`json_output` asks for JSON where supported. Callers must still validate the reply."""
+        ...
 
 
 class EmbeddingProvider(Protocol):

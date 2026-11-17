@@ -24,6 +24,7 @@ class ServerKind(StrEnum):
     MCP_HTTP = "mcp_http"
     MCP_STDIO = "mcp_stdio"
     GITHUB = "github"
+    GMAIL = "gmail"
 
 
 class ServerHealth(StrEnum):
@@ -146,6 +147,12 @@ class CredentialRejected(ToolProviderError):
     """The stored credential is missing, unusable or refused. Needs an admin, not a retry."""
 
     code = "credential_rejected"
+
+
+class ReauthorizationRequired(CredentialRejected):
+    """The person's sign-in expired or was revoked. Only they can fix it, by connecting again."""
+
+    code = "reauthorization_required"
 
 
 class DefinitionChanged(ToolProviderError):

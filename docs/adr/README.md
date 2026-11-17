@@ -142,6 +142,55 @@ their connection. The key is an environment variable, so the protection is again
 exposure, not against someone who also has the process environment. Losing the key means re-entering
 credentials, so it needs its own backup.
 
+## ADR-0014: A mailbox belongs to one person, enforced outside the model
+
+**Decision.** Connections and tool servers gain an optional `owner_user_id`. When set, only that person
+can call the tools, see them offered to the model, or read stored answers citing them. Admins get no
+exception: they can approve tools and remove the connection, which revokes it first. Gmail always has
+an owner, enforced by a database constraint. The foreign key cascades, because a null owner means
+shared, so losing an owner must not expose a mailbox.
+
+**Alternatives.**
+- Workspace-wide like GitHub (ADR-0012): simple, but one person's private mail would be readable by
+  every member. Rejected outright.
+- A separate tool registry per user: clean isolation, but duplicates review and audit machinery that
+  should be shared.
+- Admin-created connections: fits the existing routes, but a mailbox can only be authorized by its
+  owner, so members connect their own with `tools:invoke`.
+
+**Consequences.** Three places must honour ownership: the gateway, the catalog and stored answers. All
+are tested, and `usable_by` holds the rule. Tools still need an admin's approval, so a member's mailbox
+is unusable until an admin acts. Search returns whole threads rather than IDs, because the planner
+cannot chain calls (ADR-0013). That costs more per search. Sending mail to an external model needs
+`EXTERNAL_MODEL_MAIL_APPROVED`, on top of the general egress approval.
+
+## ADR-0013: Plan once, before reading any untrusted content
+
+**Decision.** A question runs as a fixed sequence: one planning call, the planned read-only tool
+calls, document retrieval, one answering call. The planning prompt holds only the user's questions
+and the catalog of admin-approved tools. Tool output, documents and earlier answers never reach it.
+The answering call has no tools. Limits cover calls, time and tokens per question.
+
+**Alternatives.**
+- A loop where the model reads each result and picks the next call: handles chains such as "list my
+  PRs, then read each one", but hostile text in an issue could then choose the next call and place
+  data in its arguments, reaching a third-party server. Read-only tools do not prevent that.
+- Loop with provenance checks on arguments: promising, but needs typed values from tool output and
+  real usage data to design well. The likely next step when chains are needed.
+- Native provider tool calling: better on some vendors, but llama3 through Ollama lacks it, and
+  the Anthropic adapter has never run live. JSON text keeps one code path, and is validated anyway.
+
+**Consequences.** Injected tool content cannot select a tool or set an argument, whatever the model
+does, because planning has finished before it is read. **One result cannot feed another call**, so
+"review this issue and inspect the relevant code" needs the user to name the file. Content pasted
+into a question is the user's own and can steer planning, but only to calls they could make anyway.
+Not durable: it runs in the request, which is acceptable only while every call is a read. Phase 4
+must revisit this, with Temporal (ADR-0003).
+
+Per-call MCP cost was measured first, as ADR-0009 asked: on loopback against the mock server, HTTP
+p50 13 ms and stdio p50 1.3 s (Windows, process start included), which is small beside model latency.
+Connect-per-call stands, with a real server's network distance still unmeasured.
+
 ## ADR-0012: GitHub access is a workspace decision for now
 
 **Decision.** Use a GitHub App with an admin-chosen repository list per connection. Any member with

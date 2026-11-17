@@ -7,9 +7,15 @@ import { MessageView, locationLabel } from "./Answer";
 
 const citation: Citation = {
   marker: "S1",
+  kind: "document",
   chunk_id: "c1",
   document_id: "d1",
   source_id: "s1",
+  tool_id: null,
+  invocation_id: null,
+  fetched_at: null,
+  arguments: null,
+  truncated: false,
   document_title: "Refund Policy",
   source_name: "Support",
   version_number: 2,
@@ -40,9 +46,27 @@ function message(status: GroundingStatus, content: string, citations: Citation[]
       removed_citations: [],
       stale_sources: 0,
       notes: [],
+      planner: "not_run",
+      search_query: null,
+      tool_calls: [],
     },
   };
 }
+
+const toolCitation: Citation = {
+  ...citation,
+  kind: "tool",
+  chunk_id: null,
+  document_id: null,
+  source_id: null,
+  tool_id: "github.pull_get",
+  invocation_id: "i1",
+  fetched_at: "2026-01-01T00:00:00Z",
+  arguments: { number: 7 },
+  document_title: null,
+  source_name: null,
+  version_number: null,
+};
 
 describe("MessageView", () => {
   it("turns markers into citation buttons that report the citation", async () => {
@@ -72,6 +96,7 @@ describe("MessageView", () => {
     ["extractive", "Excerpts only"],
     ["no_evidence", "No source found"],
     ["model_unavailable", "Model unavailable"],
+    ["budget_exceeded", "Limit reached"],
     ["withheld", "Withheld"],
   ])("labels %s distinctly", (status, label) => {
     render(<MessageView message={message(status, "text", [])} onCite={vi.fn()} />);
@@ -101,6 +126,41 @@ describe("MessageView", () => {
     const withNotes: Message = { ...base, grounding: { ...base.grounding!, notes: ["The model cited sources that do not exist."] } };
     render(<MessageView message={withNotes} onCite={vi.fn()} />);
     expect(screen.getByText(/do not exist/)).toBeInTheDocument();
+  });
+});
+
+describe("live tool results", () => {
+  it("names the tool and marks the source as live data", async () => {
+    const onCite = vi.fn();
+    render(<MessageView message={message("grounded", "PR 7 is open [S1].", [toolCitation])} onCite={onCite} />);
+    expect(screen.getByText(/live data, fetched/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Citation S1: github.pull_get" }));
+    expect(onCite).toHaveBeenCalledWith(toolCitation);
+  });
+
+  it("flags a cut-off result next to the citation", () => {
+    render(<MessageView message={message("grounded", "Claim [S1].", [{ ...toolCitation, truncated: true }])} onCite={vi.fn()} />);
+    expect(screen.getByText(/Incomplete/)).toBeInTheDocument();
+  });
+
+  it("never presents a failed call as having returned data", () => {
+    const base = message("grounded", "Claim.", []);
+    const failed: Message = {
+      ...base,
+      grounding: {
+        ...base.grounding!,
+        tool_calls: [{ tool_id: "github.pull_get", arguments: { number: 7 }, status: "failed", code: "timeout", invocation_id: null, fetched_at: null }],
+      },
+    };
+    render(<MessageView message={failed} onCite={vi.fn()} />);
+    expect(screen.getByText("Did not complete")).toBeInTheDocument();
+    expect(screen.queryByText("Returned data")).toBeNull();
+    expect(screen.getByText(/timeout/)).toBeInTheDocument();
+  });
+
+  it("shows nothing about live systems when none were checked", () => {
+    render(<MessageView message={message("grounded", "Claim.", [])} onCite={vi.fn()} />);
+    expect(screen.queryByText("Live systems checked")).toBeNull();
   });
 });
 

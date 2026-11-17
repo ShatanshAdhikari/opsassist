@@ -9,6 +9,7 @@ export type GroundingStatus =
   | "extractive"
   | "no_evidence"
   | "model_unavailable"
+  | "budget_exceeded"
   | "withheld";
 
 export interface User {
@@ -49,9 +50,15 @@ export interface DocumentInfo {
 }
 export interface Citation {
   marker: string;
-  chunk_id: string;
-  document_id: string;
-  source_id: string;
+  kind: "document" | "tool";
+  chunk_id: string | null;
+  document_id: string | null;
+  source_id: string | null;
+  tool_id: string | null;
+  invocation_id: string | null;
+  fetched_at: string | null;
+  arguments: Record<string, unknown> | null;
+  truncated: boolean;
   document_title: string | null;
   source_name: string | null;
   version_number: number | null;
@@ -65,7 +72,18 @@ export interface Citation {
   used: boolean;
   access_revoked: boolean;
 }
+export interface ToolCall {
+  tool_id: string;
+  arguments: Record<string, unknown>;
+  status: string;
+  code: string | null;
+  invocation_id: string | null;
+  fetched_at: string | null;
+}
 export interface Grounding {
+  planner: "not_run" | "ran" | "failed";
+  search_query: string | null;
+  tool_calls: ToolCall[];
   status: GroundingStatus;
   provider: string | null;
   model: string | null;
@@ -98,6 +116,68 @@ export interface Chunk {
   page: number | null;
   line_start: number | null;
   line_end: number | null;
+}
+
+export interface GmailStatus {
+  configured: boolean;
+  connected: boolean;
+  connection_id: string | null;
+  address: string | null;
+  health: string | null;
+  last_error_code: string | null;
+  last_verified_at: string | null;
+}
+export interface Connection {
+  id: string;
+  provider: string;
+  name: string;
+  config: Record<string, unknown>;
+  last_verified_at: string | null;
+  created_at: string;
+}
+export interface ToolServer {
+  id: string;
+  slug: string;
+  name: string;
+  kind: string;
+  connection_id: string | null;
+  enabled: boolean;
+  health: string;
+  last_error_code: string | null;
+  last_checked_at: string | null;
+  last_discovered_at: string | null;
+}
+export interface Discovery {
+  added: string[];
+  changed: string[];
+  removed: string[];
+  unchanged: string[];
+  rejected: { name?: string; reason?: string }[];
+}
+export interface NewGitHubConnection {
+  slug: string;
+  name: string;
+  app_id: string;
+  installation_id: number;
+  private_key: string;
+  repositories: string[];
+}
+export interface ToolAdmin {
+  id: string;
+  server_id: string;
+  tool_id: string;
+  name: string;
+  description: string;
+  review_status: "pending" | "approved" | "changed";
+  enabled: boolean;
+  available: boolean;
+  access: "read" | "write";
+  risk_level: number;
+  definition_hash: string;
+  pending_hash: string | null;
+  /** Provider-declared and unreviewed. Shown as plain text only. */
+  annotations?: Record<string, unknown>;
+  pending_definition?: { annotations?: Record<string, unknown> } | null;
 }
 
 export class ApiError extends Error {
@@ -163,6 +243,30 @@ export const api = {
   listMessages: (ws: string, id: string) => request<Message[]>(`/workspaces/${ws}/conversations/${id}/messages`),
   ask: (ws: string, id: string, question: string) =>
     request<{ user_message: Message; answer: Message }>(`/workspaces/${ws}/conversations/${id}/messages`, json("POST", { question })),
+
+  gmailStatus: (ws: string) => request<GmailStatus>(`/workspaces/${ws}/connections/gmail`),
+  authorizeGmail: (ws: string) => request<{ authorization_url: string }>(`/workspaces/${ws}/connections/gmail/authorize`, { method: "POST" }),
+  verifyGmail: (ws: string) => request<{ verified: boolean; code: string | null }>(`/workspaces/${ws}/connections/gmail/verify`, { method: "POST" }),
+  disconnectGmail: (ws: string, force: boolean) =>
+    request<{ revoked_at_provider: boolean }>(`/workspaces/${ws}/connections/gmail${force ? "?force=true" : ""}`, { method: "DELETE" }),
+  listConnections: (ws: string) => request<Connection[]>(`/workspaces/${ws}/connections`),
+  createGitHub: (ws: string, body: NewGitHubConnection) =>
+    request<{ connection: Connection; tool_server: ToolServer }>(`/workspaces/${ws}/connections/github`, json("POST", body)),
+  verifyConnection: (ws: string, id: string) =>
+    request<{ verified: boolean; code: string | null }>(`/workspaces/${ws}/connections/${id}/verify`, { method: "POST" }),
+  setRepositories: (ws: string, id: string, repositories: string[]) =>
+    request<Connection>(`/workspaces/${ws}/connections/${id}/repositories`, json("PUT", { repositories })),
+  replaceKey: (ws: string, id: string, privateKey: string) =>
+    request<Connection>(`/workspaces/${ws}/connections/${id}/key`, json("PUT", { private_key: privateKey })),
+  deleteConnection: (ws: string, id: string) => request<void>(`/workspaces/${ws}/connections/${id}`, { method: "DELETE" }),
+  listToolServers: (ws: string) => request<ToolServer[]>(`/workspaces/${ws}/tool-servers`),
+  discoverTools: (ws: string, serverId: string) => request<Discovery>(`/workspaces/${ws}/tool-servers/${serverId}/discover`, { method: "POST" }),
+  listTools: (ws: string) => request<ToolAdmin[]>(`/workspaces/${ws}/tools`),
+  approveReadTool: (ws: string, tool: ToolAdmin) =>
+    request<ToolAdmin>(
+      `/workspaces/${ws}/tools/${tool.id}/review`,
+      json("POST", { definition_hash: tool.pending_hash ?? tool.definition_hash, risk_level: 0, access: "read", enabled: true }),
+    ),
 };
 
 export function errorMessage(error: unknown): string {

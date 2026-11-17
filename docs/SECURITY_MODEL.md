@@ -47,7 +47,7 @@ authorization.
 
 Layers for the current slice:
 
-1. [built] **No capability**: the model has no tools. Worst case today is a misleading answer.
+1. [built] **No capability where untrusted content is read**: the answering model has no tools. Worst case there is a misleading answer. Tools are chosen earlier, by a planning call that sees only the user's questions and admin-approved tool definitions (ADR-0013). Its reply is checked against the catalog, then by the gateway.
 2. [built] **Permission filtering before context assembly**: restricted text cannot reach the prompt, so no injection can extract it.
 3. [built] **Separation**: excerpts go in the user turn inside nonce-delimited blocks labelled as data. Delimiter-like text in documents is neutralized.
 4. [built] **Output validation**: citation markers must exist in supplied evidence; otherwise removed and flagged. Uncited answers are downgraded.
@@ -60,9 +60,7 @@ why layers 1, 2 and 4 do not depend on model behaviour, and why evaluation resul
 for injection are reported as measured, per model.
 
 Later layers *(planned)*: tool allowlists per task; approval gates outside the
-model; treating any tool output as tainted, so that a plan derived from untrusted
-content cannot auto-execute writes; sandboxed code execution with no secrets and
-no network by default.
+model; sandboxed code execution with no secrets and no network by default.
 
 ## 6. Data egress
 
@@ -102,8 +100,16 @@ local compose file uses plaintext connections and development-only passwords.
 
 ## 10. Tool and MCP controls
 
-Nothing calls tools automatically yet: no model or workflow is connected to the gateway. Calls come
-only from an authenticated person through the API.
+Calls come from an authenticated person through the API, or from the assistant's plan for that
+person's question. The plan runs as that person, through the same gateway, and a viewer gets no
+planning at all. Limits: `PLANNER_MAX_TOOL_CALLS`, `ASSISTANT_MAX_SECONDS`,
+`ASSISTANT_MAX_TOKENS_PER_QUESTION`, `ASSISTANT_MAX_TOOL_CONTEXT_CHARS`.
+
+- [built] Tool output never reaches planning, including through stored answers on a follow-up. Tested with a scripted model obeying the injection (`tests/security/test_planner_injection.py`).
+- [built] A tool call that fails or reports an error supplies no text to the model. The answer states that its live state was not checked.
+- [built] Stored answers citing a tool are withheld once the reader loses `tools:invoke` or the server is disabled or deleted, and are then left out of later prompts.
+- [built] Parts of a question can reach a third-party tool server as arguments. The argument values are shown to the user with the answer.
+- [built] Excerpts of tool output (up to 1,500 characters each) and call arguments are stored in the asker's private conversation. The invocation log still holds neither.
 
 - [built] Registration, discovery and review need `tools:admin`. Invocation needs `tools:invoke` (member and above), checked in the gateway as well as the route. Other workspaces get 404, and RLS covers all three tool tables.
 - [built] Discovered tools start disabled at Level 3. Server annotations such as `readOnlyHint` are stored and displayed, but grant nothing.
@@ -125,6 +131,16 @@ GitHub specifically:
 - [built] Issue, PR and file content is returned marked untrusted, secret-redacted and clipped.
 - [built] Unreadable check status is reported as unknown, never as passing.
 
+Gmail specifically (tested against a fake Google only, see `PROGRESS.md`):
+
+- [built] Only `gmail.readonly` is requested. A grant of anything else, broader or narrower, is refused and revoked, and the scope is rechecked on refresh.
+- [built] A mailbox is its owner's alone, enforced in the gateway, the catalog and stored answers. Other members and admins get 404 (ADR-0014).
+- [built] Sign-in uses PKCE and a single-use state bound to the signed-in person, so a callback cannot attach someone else's mailbox.
+- [built] Refresh tokens use the encrypted credential store. Access tokens stay in memory. Neither appears in any response or log.
+- [built] Email is untrusted data: it never reaches planning, HTML is reduced to text and never rendered, and attachments are listed but not downloaded.
+- [built] Disconnecting revokes at Google first. If Google cannot confirm, the connection stays unless forced, and the result says so.
+- [built] An external model is not offered a mailbox without `EXTERNAL_MODEL_MAIL_APPROVED`.
+
 Known gaps:
 
 1. **Any member with `tools:invoke` can read every repository on a GitHub connection**, whatever their own GitHub access (ADR-0012). List only repositories the whole workspace may read.
@@ -136,9 +152,11 @@ Known gaps:
 6. A crash mid-call leaves an invocation at `running`. It is visible but nothing reconciles it.
 7. Stdio servers are a deployment-wide list, so any workspace admin can register a configured one.
 
+8. A misleading answer is still possible: hostile tool text reaches the answering model, which may repeat or believe it. Citations show where it came from, but nothing proves a claim is true.
+9. Tool descriptions reach the planning prompt. They are admin-reviewed and pinned, so a hostile description is a review failure, not something the platform detects.
+
 Planned: credentials for MCP servers (only native GitHub uses the store today); per-person GitHub
-access checks; scheduled re-discovery with alerts;
-treating tool output as tainted in the orchestrator, so a plan derived from it cannot auto-execute.
+access checks; scheduled re-discovery with alerts.
 
 ## 11. Known gaps at this milestone
 

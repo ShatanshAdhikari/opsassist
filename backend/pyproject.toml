@@ -55,8 +55,9 @@ asyncio_default_test_loop_scope = "session"
 markers = [
     "live_model: requires a local Ollama daemon; deselected by default",
     "live_github: requires a real GitHub App, see docs/GITHUB_SETUP.md; deselected by default",
+    "live_gmail: requires a real Google sign-in, see docs/GMAIL_SETUP.md; deselected by default",
 ]
-addopts = "-m 'not live_model and not live_github'"
+addopts = "-m 'not live_model and not live_github and not live_gmail'"
 
 [tool.ruff]
 line-length = 100

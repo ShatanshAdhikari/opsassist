@@ -191,9 +191,15 @@ class AskRequest(RequestBody):
 
 class CitationOut(BaseModel):
     marker: str
-    chunk_id: uuid.UUID
-    document_id: uuid.UUID
-    source_id: uuid.UUID
+    kind: Literal["document", "tool"] = "document"
+    chunk_id: uuid.UUID | None = None
+    document_id: uuid.UUID | None = None
+    source_id: uuid.UUID | None = None
+    tool_id: str | None = None
+    invocation_id: uuid.UUID | None = None
+    fetched_at: str | None = None
+    arguments: dict[str, Any] | None = None
+    truncated: bool = False
     document_title: str | None = None
     source_name: str | None = None
     version_number: int | None = None
@@ -215,8 +221,18 @@ GroundingStatus = Literal[
     "extractive",
     "no_evidence",
     "model_unavailable",
+    "budget_exceeded",
     "withheld",
 ]
+
+
+class ToolCallOut(BaseModel):
+    tool_id: str
+    arguments: dict[str, Any]
+    status: str
+    code: str | None = None
+    invocation_id: uuid.UUID | None = None
+    fetched_at: str | None = None
 
 
 class GroundingOut(BaseModel):
@@ -228,6 +244,9 @@ class GroundingOut(BaseModel):
     removed_citations: list[str] = []
     stale_sources: int = 0
     notes: list[str] = []
+    planner: Literal["not_run", "ran", "failed"] = "not_run"
+    search_query: str | None = None
+    tool_calls: list[ToolCallOut] = []
 
 
 class MessageOut(BaseModel):
