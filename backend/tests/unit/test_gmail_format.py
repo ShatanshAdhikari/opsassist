@@ -113,12 +113,24 @@ def test_reply_state_names_why_no_reply_is_awaited() -> None:
     drafts = _thread(
         [_message(from_me=True, is_draft=True)], awaiting_reply=False, last_message_automated=False
     )
-    text = render_search(_search([automated, mine, drafts]))
+    listed = _thread(
+        [_message(mailing_list=True)], awaiting_reply=False, last_message_via_list=True
+    )
+    text = render_search(_search([automated, mine, drafts, listed]))
+    assert "unclear, the last message came through a mailing list." in text
+    assert "(mailing list; unread)" in text
     assert "no, the last message is from an automated sender." in text
     assert "(automated sender; unread)" in text
     assert "no, the mailbox owner wrote last." in text
     assert "no, nothing has been sent in this conversation." in text
     assert "Awaiting a reply: yes" not in text
+
+
+def test_unnamed_attachments_add_no_empty_mark() -> None:
+    message = _message(unread=False, attachments=[{"filename": "", "mime_type": "x", "size": 1}])
+    text = render_search(_search([_thread([message])]))
+    assert "attachments" not in text
+    assert "from Ann <ann@example.test>: The deploy" in text
 
 
 def test_says_when_more_results_exist_and_when_none_matched() -> None:

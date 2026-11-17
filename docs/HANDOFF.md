@@ -124,6 +124,10 @@ Open product decisions are also listed in `docs/IMPLEMENTATION_PLAN.md`.
 
 Screens are also missing: general tool review (MCP servers), members, audit, grants.
 
+Follow-up from the PR #4 review: `gmail.thread_get` still gives the model raw JSON, up to 30
+messages of 6,000 characters each. It needs a compact rendering like search's
+(`integrations/gmail_format.py`) before it is usable on CPU.
+
 ## Running it
 
 From PowerShell. `uv` is not on PATH, so use `python -m uv`. Set the environment variable in each new

@@ -1,6 +1,6 @@
 import pytest
 
-from opsassist.integrations.gmail_signals import is_automated
+from opsassist.integrations.gmail_signals import sender_kind
 
 
 @pytest.mark.parametrize(
@@ -9,14 +9,12 @@ from opsassist.integrations.gmail_signals import is_automated
         {"auto-submitted": "auto-generated"},
         {"auto-submitted": "Auto-Replied"},
         {"precedence": "bulk"},
-        {"precedence": " List "},
-        {"precedence": "junk"},
+        {"precedence": " Junk "},
         {"list-unsubscribe": "<mailto:unsubscribe@news.example.test>"},
-        {"list-id": "Engineering <eng.example.test>"},
     ],
 )
 def test_standard_automation_headers_mark_a_message(headers: dict[str, str]) -> None:
-    assert is_automated(headers, "ann@example.test") is True
+    assert sender_kind(headers, "ann@example.test") == "automated"
 
 
 @pytest.mark.parametrize(
@@ -31,10 +29,12 @@ def test_standard_automation_headers_mark_a_message(headers: dict[str, str]) -> 
         "postmaster@example.test",
         "bounces+123@example.test",
         "noreply-abc@example.test",
+        "notifications-noreply@linkedin.example.test",
+        "jobs.noreply@example.test",
     ],
 )
 def test_automated_sender_addresses(address: str) -> None:
-    assert is_automated({}, address) is True
+    assert sender_kind({}, address) == "automated"
 
 
 @pytest.mark.parametrize(
@@ -42,9 +42,30 @@ def test_automated_sender_addresses(address: str) -> None:
     ["ann@example.test", "noreplyann@example.test", "replies@example.test", "notify.me@x.test", ""],
 )
 def test_people_are_not_marked(address: str) -> None:
-    assert is_automated({}, address) is False
+    assert sender_kind({}, address) == "person"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"list-id": "Engineering <eng.example.test>"},
+        {"precedence": "list"},
+        # Google Groups adds both to messages people write. The list wins over unsubscribe.
+        {"list-id": "<eng.example.test>", "list-unsubscribe": "<mailto:u@example.test>"},
+    ],
+)
+def test_mailing_lists_are_kept_apart_from_automated_mail(headers: dict[str, str]) -> None:
+    assert sender_kind(headers, "ann@example.test") == "mailing_list"
+
+
+def test_explicit_automation_outranks_a_list() -> None:
+    assert sender_kind({"list-id": "<x>", "auto-submitted": "auto-generated"}, "a@b.test") == (
+        "automated"
+    )
+    assert sender_kind({"list-id": "<x>"}, "noreply@b.test") == "automated"
 
 
 def test_auto_submitted_no_and_normal_precedence_are_not_automation() -> None:
-    assert is_automated({"auto-submitted": "no", "precedence": "first-class"}, "a@b.test") is False
-    assert is_automated({"list-unsubscribe": "  "}, "a@b.test") is False
+    headers = {"auto-submitted": "no", "precedence": "first-class"}
+    assert sender_kind(headers, "a@b.test") == "person"
+    assert sender_kind({"list-unsubscribe": "  "}, "a@b.test") == "person"

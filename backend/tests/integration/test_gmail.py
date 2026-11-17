@@ -435,6 +435,24 @@ async def test_person_writing_last_is_still_awaiting_reply(gm: Harness, google: 
     assert thread["last_message_automated"] is False
 
 
+async def test_colleague_on_a_mailing_list_is_unclear_not_automated(
+    gm: Harness, google: FakeGoogle
+) -> None:
+    posted = _message("m2", "Ann <ann@example.test>", "Can someone review?", at=2)
+    posted["payload"]["headers"] += [
+        {"name": "List-Id", "value": "Engineering <eng.example.test>"},
+        {"name": "List-Unsubscribe", "value": "<mailto:eng+unsubscribe@example.test>"},
+    ]
+    google.threads = {"t1": {"id": "t1", "messages": [_message("m1", ME, "Hi", at=1), posted]}}
+    _tenant, client, base = await _ready(gm)
+    thread = (await _invoke(client, base, "thread_get", thread_id="t1")).json()["structured"]
+    last = thread["messages"][-1]
+    assert (last["automated"], last["mailing_list"]) == (False, True)
+    assert thread["awaiting_reply"] is False
+    assert thread["last_message_via_list"] is True
+    assert thread["last_message_automated"] is False
+
+
 async def test_html_is_reduced_to_text_and_attachments_are_only_listed(
     gm: Harness, google: FakeGoogle
 ) -> None:

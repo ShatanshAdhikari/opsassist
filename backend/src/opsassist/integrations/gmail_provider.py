@@ -35,7 +35,7 @@ from opsassist.integrations.gmail_client import (
     new_http_client,
 )
 from opsassist.integrations.gmail_format import render_search
-from opsassist.integrations.gmail_signals import AUTOMATION_HEADERS, is_automated
+from opsassist.integrations.gmail_signals import AUTOMATION_HEADERS, sender_kind
 from opsassist.models import IntegrationConnection
 from opsassist.observability import redact_secrets, redact_tree
 from opsassist.tools.base import (
@@ -195,6 +195,7 @@ def _message(message: dict[str, Any], address: str, *, body_chars: int) -> dict[
     sender = parseaddr(headers.get("from", ""))[1].lower()
     body = _message_body(payload)
     from_me = "SENT" in labels or sender == address.lower()
+    kind = "person" if from_me else sender_kind(headers, sender)
     return {
         "message_id": message.get("id"),
         "from": headers.get("from"),
@@ -204,7 +205,8 @@ def _message(message: dict[str, Any], address: str, *, body_chars: int) -> dict[
         "date": headers.get("date"),
         "internal_timestamp_ms": _internal_date(message),
         "from_me": from_me,
-        "automated": not from_me and is_automated(headers, sender),
+        "automated": kind == "automated",
+        "mailing_list": kind == "mailing_list",
         "is_draft": "DRAFT" in labels,
         "unread": "UNREAD" in labels,
         "labels": labels,
@@ -228,10 +230,14 @@ def thread_summary(thread: dict[str, Any], address: str, *, body_chars: int) -> 
         "message_count": len(messages),
         "messages_omitted": len(messages) - len(kept),
         "last_message_date": sent[-1]["date"] if sent else None,
-        # Says only that someone else wrote last and was not an automated sender. Whether a reply
-        # is really needed is a judgement left to people.
-        "awaiting_reply": bool(sent) and not sent[-1]["from_me"] and not sent[-1]["automated"],
+        # Says only that a person other than the owner wrote last, not through a mailing list.
+        # Whether a reply is really needed is a judgement left to people.
+        "awaiting_reply": bool(sent)
+        and not sent[-1]["from_me"]
+        and not sent[-1]["automated"]
+        and not sent[-1]["mailing_list"],
         "last_message_automated": bool(sent) and sent[-1]["automated"],
+        "last_message_via_list": bool(sent) and sent[-1]["mailing_list"],
         "has_unread": any(item["unread"] for item in messages),
         "messages": kept,
     }

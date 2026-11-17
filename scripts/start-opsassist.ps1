@@ -1,7 +1,21 @@
 # Starts the API, worker and web dev server in the background, logging to %LOCALAPPDATA%\opsassist.
 # Prerequisites: the db container (docker compose up -d --wait db) and Ollama must already be running.
-# Run once only: a second run starts a second worker. Stop the servers by ending their python and
+# It refuses to run while any of them is already up. Stop the servers by ending their python and
 # node processes.
+$busy = @()
+foreach ($port in 8000, 5173) {
+    if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
+        $busy += "port $port is already listening"
+    }
+}
+$workers = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -match 'opsassist worker' }
+if ($workers) { $busy += "an opsassist worker is already running (pid $($workers.ProcessId -join ', '))" }
+if ($busy) {
+    Write-Error ("Not starting: " + ($busy -join '; ') + ".")
+    exit 1
+}
+
 $log  = "$env:LOCALAPPDATA\opsassist"
 $root = Split-Path -Parent $PSScriptRoot
 $venv = "$log\venv"

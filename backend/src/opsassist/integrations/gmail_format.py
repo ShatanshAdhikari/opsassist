@@ -33,13 +33,16 @@ def _message_line(number: int, message: dict[str, Any]) -> str:
         marks.append("sent by the mailbox owner")
     if message.get("automated"):
         marks.append("automated sender")
+    if message.get("mailing_list"):
+        marks.append("mailing list")
     if message.get("is_draft"):
         marks.append("unsent draft")
     if message.get("unread"):
         marks.append("unread")
-    attachments = [_flat(item.get("filename")) for item in message.get("attachments") or []]
+    names = [_flat(item.get("filename")) for item in message.get("attachments") or []]
+    attachments = [name for name in names if name]
     if attachments:
-        marks.append("attachments: " + ", ".join(name for name in attachments if name))
+        marks.append("attachments: " + ", ".join(attachments))
     mark_text = f" ({'; '.join(marks)})" if marks else ""
     body = _snippet(message.get("body"), bool(message.get("body_truncated")))
     sender = _flat(message.get("from")) or "unknown sender"
@@ -56,6 +59,8 @@ def _reply_state(thread: dict[str, Any]) -> str:
         return "Awaiting a reply: yes, someone else wrote last."
     if thread.get("last_message_automated"):
         return "Awaiting a reply: no, the last message is from an automated sender."
+    if thread.get("last_message_via_list"):
+        return "Awaiting a reply: unclear, the last message came through a mailing list."
     if not any(not item.get("is_draft") for item in thread.get("messages") or []):
         return "Awaiting a reply: no, nothing has been sent in this conversation."
     return "Awaiting a reply: no, the mailbox owner wrote last."
