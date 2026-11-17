@@ -83,6 +83,9 @@ class ToolOutput:
     is_error: bool
     truncated: bool = False
     omitted_blocks: int = 0
+    # A shorter rendering written for the model. When set, the model reads it instead of the
+    # structured JSON, which API callers still get. `truncated` then describes this text.
+    model_text: str | None = None
 
     @property
     def output_chars(self) -> int:

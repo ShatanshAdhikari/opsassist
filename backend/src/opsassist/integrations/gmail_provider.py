@@ -34,6 +34,8 @@ from opsassist.integrations.gmail_client import (
     GmailRejected,
     new_http_client,
 )
+from opsassist.integrations.gmail_format import render_search
+from opsassist.integrations.gmail_signals import AUTOMATION_HEADERS, is_automated
 from opsassist.models import IntegrationConnection
 from opsassist.observability import redact_secrets, redact_tree
 from opsassist.tools.base import (
@@ -52,7 +54,7 @@ _THREAD_BODY_CHARS = 6000
 _MAX_RAW_BODY_CHARS = 2_000_000
 _MAX_MESSAGES_PER_THREAD = 30
 _MAX_ATTACHMENTS_LISTED = 20
-_HEADERS = ("from", "to", "cc", "subject", "date")
+_HEADERS = ("from", "to", "cc", "subject", "date", *AUTOMATION_HEADERS)
 _READ_ONLY = {"read_only_hint": True, "destructive_hint": False, "open_world_hint": True}
 _SKIPPED_HTML = {"script", "style", "head", "title", "template"}
 _BLOCK_HTML = {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "blockquote", "table"}
@@ -192,6 +194,7 @@ def _message(message: dict[str, Any], address: str, *, body_chars: int) -> dict[
     labels = list(message.get("labelIds") or [])
     sender = parseaddr(headers.get("from", ""))[1].lower()
     body = _message_body(payload)
+    from_me = "SENT" in labels or sender == address.lower()
     return {
         "message_id": message.get("id"),
         "from": headers.get("from"),
@@ -200,7 +203,8 @@ def _message(message: dict[str, Any], address: str, *, body_chars: int) -> dict[
         "subject": headers.get("subject"),
         "date": headers.get("date"),
         "internal_timestamp_ms": _internal_date(message),
-        "from_me": "SENT" in labels or sender == address.lower(),
+        "from_me": from_me,
+        "automated": not from_me and is_automated(headers, sender),
         "is_draft": "DRAFT" in labels,
         "unread": "UNREAD" in labels,
         "labels": labels,
@@ -224,8 +228,10 @@ def thread_summary(thread: dict[str, Any], address: str, *, body_chars: int) -> 
         "message_count": len(messages),
         "messages_omitted": len(messages) - len(kept),
         "last_message_date": sent[-1]["date"] if sent else None,
-        # Only says who wrote last. Whether a reply is really needed is a judgement left to people.
-        "awaiting_reply": bool(sent) and not sent[-1]["from_me"],
+        # Says only that someone else wrote last and was not an automated sender. Whether a reply
+        # is really needed is a judgement left to people.
+        "awaiting_reply": bool(sent) and not sent[-1]["from_me"] and not sent[-1]["automated"],
+        "last_message_automated": bool(sent) and sent[-1]["automated"],
         "has_unread": any(item["unread"] for item in messages),
         "messages": kept,
     }
@@ -333,12 +339,34 @@ class GmailToolProvider:
         except TimeoutError as exc:
             raise ProviderTimeout() from exc
 
-    def _finish(self, summary: str, data: dict[str, Any]) -> ToolOutput:
+    def _finish(
+        self,
+        summary: str,
+        data: dict[str, Any],
+        render: Callable[[dict[str, Any]], str] | None = None,
+    ) -> ToolOutput:
         max_chars = self._deps.settings.tool_max_output_chars
         redacted = redact_tree(data)
         encoded = json.dumps(redacted)
+        # Rendered from the redacted data, so the model's copy holds no secret the JSON lost.
+        rendered = redact_secrets(render(redacted)) if render is not None else None
         if len(encoded) <= max_chars:
-            return ToolOutput(text=redact_secrets(summary), structured=redacted, is_error=False)
+            if rendered is None:
+                return ToolOutput(text=redact_secrets(summary), structured=redacted, is_error=False)
+            return ToolOutput(
+                text=redact_secrets(summary),
+                structured=redacted,
+                is_error=False,
+                truncated=len(rendered) > max_chars,
+                model_text=rendered[:max_chars],
+            )
+        if rendered is not None:
+            return ToolOutput(
+                text=rendered[:max_chars],
+                structured=None,
+                is_error=False,
+                truncated=len(rendered) > max_chars,
+            )
         return ToolOutput(text=encoded[:max_chars], structured=None, is_error=False, truncated=True)
 
     async def _threads_search(
@@ -366,7 +394,7 @@ class GmailToolProvider:
             "more_results_exist": bool(listed.get("nextPageToken")),
             "result_size_estimate": listed.get("resultSizeEstimate"),
         }
-        return self._finish(f"{len(threads)} conversations returned.", data)
+        return self._finish(f"{len(threads)} conversations returned.", data, render_search)
 
     async def _thread_get(
         self, api: GmailApi, connection: GmailConnection, arguments: dict[str, Any]

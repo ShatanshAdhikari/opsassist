@@ -59,6 +59,8 @@ class ToolCallRecord:
 
 
 def _content(output: ToolOutput) -> str:
+    if output.model_text is not None:
+        return output.model_text
     if output.structured is not None:
         return json.dumps(output.structured, ensure_ascii=False)
     return output.text
