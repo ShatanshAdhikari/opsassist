@@ -409,6 +409,50 @@ async def test_thread_i_answered_last_is_not_awaiting_reply(
     assert thread["awaiting_reply"] is False
 
 
+async def test_newsletter_last_is_not_awaiting_reply(gm: Harness, google: FakeGoogle) -> None:
+    newsletter = _message("m2", "LinkedIn <updates@linkedin.example.test>", "News", at=2)
+    newsletter["payload"]["headers"].append(
+        {"name": "List-Unsubscribe", "value": "<mailto:unsubscribe@linkedin.example.test>"}
+    )
+    google.threads = {"t1": {"id": "t1", "messages": [_message("m1", ME, "Hi", at=1), newsletter]}}
+    _tenant, client, base = await _ready(gm)
+    thread = (await _invoke(client, base, "thread_get", thread_id="t1")).json()["structured"]
+    assert [m["automated"] for m in thread["messages"]] == [False, True]
+    assert thread["awaiting_reply"] is False
+    assert thread["last_message_automated"] is True
+
+
+async def test_person_writing_last_is_still_awaiting_reply(gm: Harness, google: FakeGoogle) -> None:
+    google.threads = {
+        "t1": {
+            "id": "t1",
+            "messages": [_message("m1", ME, "Hi", at=1), _message("m2", "ann@x.test", "?", at=2)],
+        }
+    }
+    _tenant, client, base = await _ready(gm)
+    thread = (await _invoke(client, base, "thread_get", thread_id="t1")).json()["structured"]
+    assert thread["awaiting_reply"] is True
+    assert thread["last_message_automated"] is False
+
+
+async def test_colleague_on_a_mailing_list_is_unclear_not_automated(
+    gm: Harness, google: FakeGoogle
+) -> None:
+    posted = _message("m2", "Ann <ann@example.test>", "Can someone review?", at=2)
+    posted["payload"]["headers"] += [
+        {"name": "List-Id", "value": "Engineering <eng.example.test>"},
+        {"name": "List-Unsubscribe", "value": "<mailto:eng+unsubscribe@example.test>"},
+    ]
+    google.threads = {"t1": {"id": "t1", "messages": [_message("m1", ME, "Hi", at=1), posted]}}
+    _tenant, client, base = await _ready(gm)
+    thread = (await _invoke(client, base, "thread_get", thread_id="t1")).json()["structured"]
+    last = thread["messages"][-1]
+    assert (last["automated"], last["mailing_list"]) == (False, True)
+    assert thread["awaiting_reply"] is False
+    assert thread["last_message_via_list"] is True
+    assert thread["last_message_automated"] is False
+
+
 async def test_html_is_reduced_to_text_and_attachments_are_only_listed(
     gm: Harness, google: FakeGoogle
 ) -> None:
@@ -735,6 +779,44 @@ async def test_assistant_answers_from_mail_and_injection_stays_out_of_planning(
     async with tenant_scope(gm.container.session_factory, tenant.workspace_id) as session:
         logged = list(await session.scalars(select(ToolInvocation)))
     assert logged[0].status == "succeeded"
+
+
+async def test_model_reads_compact_mail_while_the_api_keeps_the_json(
+    gm: Harness, google: FakeGoogle
+) -> None:
+    tenant, client, base = await _ready(gm)
+    llm = FakeLLM()
+    gm.container.llm = llm
+    tool_id = (await _tool(client, base, "threads_search"))["tool_id"]
+    llm.plan = json.dumps({"calls": [{"tool": tool_id, "arguments": {"query": "is:unread"}}]})
+    llm.response = "Ann wrote about the deploy [S1]."
+    conversation = await gm.conversation(client, tenant.workspace_id)
+    answer = await gm.ask(client, tenant.workspace_id, "summarize unread mail", conversation)
+
+    assert answer["grounding"]["status"] == "grounded"
+    prompt = llm.prompts[0]
+    assert "Conversation 1: Deployment delay" in prompt
+    assert '"labels"' not in prompt and '"message_id"' not in prompt, "raw JSON stayed out"
+    structured = (await _invoke(client, base, "threads_search", query="is:unread")).json()[
+        "structured"
+    ]
+    assert structured["threads"][0]["messages"][0]["message_id"] == "m1"
+
+
+async def test_secrets_stay_out_of_the_compact_mail(gm: Harness, google: FakeGoogle) -> None:
+    google.threads = {
+        "t1": {"id": "t1", "messages": [_message("m1", "a@b.test", f"key {FAKE_SECRET}", at=1)]}
+    }
+    tenant, client, base = await _ready(gm)
+    llm = FakeLLM()
+    gm.container.llm = llm
+    tool_id = (await _tool(client, base, "threads_search"))["tool_id"]
+    llm.plan = json.dumps({"calls": [{"tool": tool_id, "arguments": {"query": "key"}}]})
+    llm.response = "A key was mentioned [S1]."
+    conversation = await gm.conversation(client, tenant.workspace_id)
+    await gm.ask(client, tenant.workspace_id, "any keys?", conversation)
+    assert "Conversation 1:" in llm.prompts[0]
+    assert FAKE_SECRET not in llm.prompts[0]
 
 
 async def test_mailbox_is_not_offered_to_the_model_for_another_member(

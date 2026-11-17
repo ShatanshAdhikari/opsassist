@@ -2,6 +2,99 @@
 
 Records what was verified, not what was intended. Newest first.
 
+## 2026-11-17: first real PR question answered end to end
+
+The owner asked "What pull requests are open in ShatanshAdhikari/opsassist?" in the browser, signed
+in as themselves, llama3 on CPU. Checked in the database, not only on screen.
+
+- **Answer correct and grounded:** cites PR #3, "Add planner, read-only Gmail and GitHub connection
+  screen", as `[S1]`. Grounding status `grounded`, planner `ran`, 0 uncited sentences, 0 removed
+  citations.
+- **Live, not indexed:** one call to `github.pulls_list` with `{"repo": "ShatanshAdhikari/opsassist",
+  "state": "open"}`, succeeded in 842 ms, untruncated. The citation carries `fetched_at`
+  `2026-11-17T15:33:02Z` and the invocation ID.
+- **Time:** asked 15:31:28, answered 15:34:18 UTC, about 2 min 50 s, faster than the 6 minutes
+  expected.
+- **Wording is weak:** "According to the excerpt, there is at least one open pull request". It is
+  hedged, and the answer does not show the fetch time to the reader. Not fixed.
+- **An earlier attempt failed with a 500, caused by the launch, not the app.** The API, worker and web
+  were started from the assistant's shell, and Windows ended them with it about a minute later, mid
+  answer. Vite logged `read ECONNRESET` and returned 500. Fixed by `scripts/start-opsassist.ps1`,
+  which starts them outside the caller's process tree. They survived later shell exits.
+- Still not done: a real mail question.
+
+## 2026-11-17: real mail question, four attempts, no useful answer yet
+
+Question: "Summarize my unread emails from the last 3 days". Every attempt planned the right call,
+`gmail.threads_search` with `in:inbox is:unread newer_than:3d` (the last three added `in:inbox`).
+
+| Asked (UTC) | Outcome | Cause |
+| --- | --- | --- |
+| 15:35 | "No reliable source was found" | `reauthorization_required`: the 7-day Testing-mode token from 2026-11-05 had expired. Correctly refused. The owner reconnected Gmail |
+| 15:38 | `model_unavailable`, raw excerpt shown | Gmail succeeded (14,313 chars), then `Ollama generation failed: ReadTimeout` at `llm_timeout_seconds` 180 |
+| 15:43 | `budget_exceeded`, raw excerpt shown | Planning took 84 s, leaving the answer about 216 s of `assistant_max_seconds` 300 |
+| 16:42 | `no_evidence`: "I could not find this in the available sources." | Gmail succeeded (11,864 chars). Ollama logged 5,184 prompt tokens in an 8,192 context, `truncated = 0`, so nothing was cut. llama3 read the threads and still answered not-found |
+
+- **Config change, local only:** `.env` now has `LLM_TIMEOUT_SECONDS=600` and
+  `ASSISTANT_MAX_SECONDS=900`, needed for CPU. Not in `.env.example`.
+- **The failures were honest.** None invented mail content, and the fallbacks cited the real excerpt.
+- **Likely cause of the last one, not proven:** the Gmail result is raw JSON, about 5,000 tokens, which
+  is hard for llama3 8B to read, and slow: about 5 minutes of CPU prefill alone. A compact rendering
+  (sender, subject, date, snippet per thread) should help with both. Not built.
+- llama3's context is 8,192 tokens, below `ollama_num_ctx` 16,384, so Ollama caps it. Larger mail
+  results could be truncated.
+
+### Compact Gmail search result for the model: first real mail answer
+
+**What changed:** `integrations/gmail_format.py` renders a `threads_search` result as plain text:
+per conversation the subject, message count, unread and last-sender flags, and per message the date,
+sender, marks and a 500-character snippet, with the newest 5 messages kept. IDs, labels, links and
+to/cc are dropped. `ToolOutput.model_text` carries it, and `tool_runner` prefers it over the JSON.
+API callers still get the full JSON. Rendered after redaction. Whitespace in every field is
+collapsed so mail cannot forge a line of the layout. `thread_get`, GitHub and MCP are unchanged.
+
+**Tests:** ruff, format and mypy clean. Unit tests 146 passed, plus 8 new in `test_gmail_format.py`.
+Integration `test_gmail`, `test_tools`, `test_assistant` and `test_planner`: 127 passed in 10 min,
+including 2 new tests (the prompt gets the compact text and no raw JSON, and a secret in mail stays out
+of it). The full suite and the Linux run were not repeated.
+
+**Real run** (asked 17:21:12, answered 17:24:32 UTC, 3 min 20 s): "Summarize the emails I received
+this week that need a reply." Planner chose `in:inbox newer_than:7d is:unread`. Prompt fell from 5,184
+to 1,735 tokens, `truncated = 0`. **First real answer from mail:** it named all 5 conversations
+correctly (a Codecademy bootcamp and 4 LinkedIn notifications) and cited `[S1]` with its fetch time.
+Status `partially_grounded`: the opening sentence had no citation.
+
+- **Wrong on "need a reply".** All 5 are automated notifications, yet the answer says they need a
+  reply. The model took "last message not from the mailbox owner" to mean that, and the planner
+  searched for unread mail instead. Not fixed. A code-level check for automated senders (`no-reply`
+  addresses, `List-Unsubscribe` headers) would let the result say "automated, no reply expected".
+
+## 2026-11-16: GPU retest on Ollama 0.40.15. Result: stay on CPU
+
+No code changed. Tests ran with `%LOCALAPPDATA%\opsassist\gpu_test.py` and two probes in the
+session scratchpad, against local Ollama only, llama3 Q4_0, temperature 0, seed 1, model reloaded
+between rounds. The RTX 2060 (6 GB) holds 24 to 26 of 33 layers, so every GPU run is a partial offload.
+
+| Backend | Plan JSON correct | Count to 40 | Prose | Generate speed |
+| --- | --- | --- | --- | --- |
+| CPU (`num_gpu=0`) | 8 of 8, identical each time | clean | clean | about 6 tok/s |
+| CUDA (default) | not reached | "Brunsting!" | looped "(b) (c) (d)..." past 5,600 tokens | about 12 tok/s |
+| Vulkan (`CUDA_VISIBLE_DEVICES=-1`) | 6 of 9 | clean 6 of 6 | clean 6 of 6 | about 19 tok/s |
+
+- **CUDA still garbles on 0.40.15**, so the update did not fix it. One CUDA load also crashed outright:
+  `CUDA error: shared object initialization failed`, exit `0xc0000409`. The next load of the same
+  backend worked.
+- **Vulkan failures are subtle**, which makes them worse than plain garbage: a misspelled repository
+  (`ShanshAdhikari`, `ShatanshAdharni`), a missing `calls` wrapper, and arguments as a list. At
+  temperature 0 the output changed between reloads, while CPU output never did.
+- **Decision: keep `OLLAMA_NUM_GPU=0`.** Ollama was restored to its normal start (no
+  `CUDA_VISIBLE_DEVICES`). A misspelled repository is refused by the allowlist, but a misspelled
+  value in a free-text argument would not be.
+- Not tried: a model small enough to fit fully in VRAM (`llama3.2:3b`, `qwen2.5:3b`), which would
+  show whether partial offload is the trigger. Not tried: a newer NVIDIA driver.
+- Still not done: a real PR question and a real mail question end to end. The app was started for
+  the owner to ask them, since asking needs their sign-in.
+
 ## 2026-11-05: GitHub connection screen and clearer page intros, branch `feat/planner`
 
 ### What changed
