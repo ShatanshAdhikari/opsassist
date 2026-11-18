@@ -13,6 +13,7 @@ import asyncio
 import base64
 import binascii
 import json
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -59,6 +60,49 @@ _READ_ONLY = {"read_only_hint": True, "destructive_hint": False, "open_world_hin
 _SKIPPED_HTML = {"script", "style", "head", "title", "template"}
 _BLOCK_HTML = {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "blockquote", "table"}
 
+_WEEKS = re.compile(r"\b(newer_than|older_than):(\d{1,4})w\b", re.IGNORECASE)
+
+
+# Gmail's documented search operators. https://support.google.com/mail/answer/7190
+_GMAIL_OPERATORS = frozenset(
+    {
+        "from", "to", "cc", "bcc", "subject", "label", "has", "list", "filename", "in", "is",
+        "after", "before", "older", "newer", "older_than", "newer_than", "deliveredto",
+        "category", "size", "larger", "smaller", "rfc822msgid",
+    }
+)  # fmt: skip
+# An operator token: name:value, optionally negated, not part of a URL such as https://.
+_OPERATOR = re.compile(r"(?<![\w/:.])-?([A-Za-z_]+):(?!//)\S+")
+
+
+@dataclass(frozen=True)
+class GmailQuery:
+    text: str
+    dropped: tuple[str, ...]
+
+
+def gmail_query(query: str) -> GmailQuery:
+    """Make a model-written query one Gmail can run, and say what changed.
+
+    Gmail never rejects a bad query. It treats an unknown operator such as awaits:reply as text,
+    and newer_than:1w as matching nothing, so the search returns no mail and the answer reads as
+    "nothing needs a reply". Small models write both (qwen2.5:3b and llama3.2:3b, 2026-11-18).
+    Weeks become days, and unknown operators are dropped and reported in the result, so the person
+    can see the search that ran. Reply state is computed here, not by Gmail, so nothing is lost.
+    """
+    dropped: list[str] = []
+
+    def keep_known(match: re.Match[str]) -> str:
+        if match.group(1).lower() in _GMAIL_OPERATORS:
+            return match.group(0)
+        dropped.append(match.group(0))
+        return ""
+
+    text = _WEEKS.sub(lambda m: f"{m.group(1)}:{int(m.group(2)) * 7}d", query)
+    text = " ".join(_OPERATOR.sub(keep_known, text).split())
+    return GmailQuery(text, tuple(dropped))
+
+
 TOOLS: dict[str, ToolDescriptor] = {
     tool.name: tool
     for tool in (
@@ -67,7 +111,8 @@ TOOLS: dict[str, ToolDescriptor] = {
             description=(
                 "Search this person's mailbox and return matching conversations with their "
                 "messages in order, and whether each awaits a reply. Live data. The query uses "
-                "Gmail search syntax, such as from:alice, is:unread, newer_than:7d, in:inbox."
+                "Gmail search syntax, such as from:alice, is:unread, newer_than:7d, in:inbox. "
+                "Time units for newer_than and older_than are d, m and y only."
             ),
             input_schema={
                 "type": "object",
@@ -378,10 +423,11 @@ class GmailToolProvider:
     async def _threads_search(
         self, api: GmailApi, connection: GmailConnection, arguments: dict[str, Any]
     ) -> ToolOutput:
+        query = gmail_query(arguments["query"])
         listed = await api.get(
             "/gmail/v1/users/me/threads",
             {
-                "q": arguments["query"],
+                "q": query.text,
                 "maxResults": arguments.get("limit", _SEARCH_DEFAULT_THREADS),
             },
         )
@@ -395,6 +441,9 @@ class GmailToolProvider:
             threads.append(thread_summary(full, connection.address, body_chars=_SEARCH_BODY_CHARS))
         data = {
             "mailbox": connection.address,
+            # The query Gmail ran, which can differ from the arguments (see gmail_query).
+            "query": query.text,
+            "dropped_terms": list(query.dropped),
             "threads": threads,
             # Absent results must not read as "there is no more mail".
             "more_results_exist": bool(listed.get("nextPageToken")),

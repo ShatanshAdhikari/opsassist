@@ -70,6 +70,11 @@ def render_search(data: dict[str, Any]) -> str:
     """Render the dict built by the threads_search tool. Expects already-redacted data."""
     threads = data.get("threads") or []
     lines = [f"Mailbox: {_flat(data.get('mailbox'))}. Conversations returned: {len(threads)}."]
+    if data.get("query"):
+        lines.append(f"Gmail search run: {_flat(data.get('query'))}")
+    if data.get("dropped_terms"):
+        terms = ", ".join(_flat(term) for term in data["dropped_terms"])
+        lines.append(f"Left out because Gmail does not support them: {terms}")
     if data.get("more_results_exist"):
         lines.append("More conversations match this search than are shown here.")
     for index, thread in enumerate(threads, start=1):

@@ -391,6 +391,22 @@ async def test_search_returns_conversations_in_order_with_reply_state(
     assert google.requests[-2].url.params["maxResults"] == "3"
 
 
+async def test_search_sends_weeks_to_gmail_as_days(gm: Harness, google: FakeGoogle) -> None:
+    _tenant, client, base = await _ready(gm)
+    response = await _invoke(client, base, "threads_search", query="is:unread newer_than:1w")
+    assert response.status_code == 200, response.text
+    assert google.requests[-2].url.params["q"] == "is:unread newer_than:7d"
+    assert response.json()["structured"]["query"] == "is:unread newer_than:7d"
+
+
+async def test_search_leaves_out_operators_gmail_lacks(gm: Harness, google: FakeGoogle) -> None:
+    _tenant, client, base = await _ready(gm)
+    response = await _invoke(client, base, "threads_search", query="newer_than:7d awaits:reply")
+    assert response.status_code == 200, response.text
+    assert google.requests[-2].url.params["q"] == "newer_than:7d"
+    assert response.json()["structured"]["dropped_terms"] == ["awaits:reply"]
+
+
 async def test_thread_i_answered_last_is_not_awaiting_reply(
     gm: Harness, google: FakeGoogle
 ) -> None:
