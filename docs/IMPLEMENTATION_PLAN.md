@@ -23,7 +23,7 @@ Last updated: 2026-11-03. Status reflects verified state, not intent.
 
 ## Phases
 
-### Phase 0: Discovery and architecture. Written, pending owner review.
+### Phase 0: Discovery and architecture. Written. ADRs accepted by the owner 2026-11-18.
 Docs in `docs/`, ADRs in `docs/adr/`.
 
 ### Phase 1: Foundation. Implemented. CI defined but never run (no remote).

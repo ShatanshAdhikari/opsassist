@@ -1,7 +1,13 @@
 # Architecture Decision Records
 
-Status of all: **proposed, pending review by the project owner**, 2026-11-03.
-They were accepted provisionally to allow implementation to proceed.
+Status of all, ADR-0001 to ADR-0014: **accepted by the project owner, 2026-11-18.** They were
+proposed on 2026-11-03 and accepted provisionally so implementation could proceed.
+
+Acceptance does not remove the follow-ups each ADR records. In particular:
+- ADR-0003 and ADR-0013: Phase 4 must re-evaluate Temporal and revisit plan-once before approval
+  workflows are built.
+- ADR-0012: add per-person GitHub access checks before any workspace needs repositories with
+  different audiences.
 
 ## ADR-0001: Modular monolith, separate worker process
 
@@ -205,4 +211,4 @@ Connect-per-call stands, with a real server's network distance still unmeasured.
 **Consequences.** This departs from the original design and is a real limit: a member can read a
 private repository they could not open on GitHub, if an admin put it on the connection. It is
 documented in `GITHUB_SETUP.md`. **Add per-person checks before any workspace needs repositories
-with different audiences.** This ADR needs the owner's explicit agreement.
+with different audiences.** Accepted explicitly by the owner on 2026-11-18, with that limit.

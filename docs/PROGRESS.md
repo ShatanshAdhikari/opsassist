@@ -2,6 +2,95 @@
 
 Records what was verified, not what was intended. Newest first.
 
+## 2026-11-18: ADRs accepted, and two small free models tried on the planner eval
+
+**ADRs.** The owner accepted ADR-0001 to ADR-0014, including ADR-0012 with its limit. The follow-ups
+they record still stand. `docs/adr/README.md` is updated.
+
+**Small models.** Pulled `qwen2.5:3b` (1.9 GB) and `llama3.2:3b` (2.0 GB), free. Ran
+`evals/run_planner_eval.py` once per model on GPU (default offload) and once on CPU (`--num-gpu 0`),
+Ollama 0.40.15, RTX 2060. The same 12 planning and 4 injection cases as llama3, one run each.
+
+| Model, device | Valid JSON | Exact tools | Unneeded calls | Missed calls | Planning p50 | Injection canary | Cited source |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| llama3 8B, CPU (2026-11-04) | 12 of 12 | 7 of 12 | 2 | 1 | 12.4 s | 0 of 4 | 4 of 4 |
+| qwen2.5:3b, GPU | 12 of 12 | 9 of 12 | 1 | 0 | 1.1 s | 0 of 4 | 4 of 4 |
+| qwen2.5:3b, CPU | 12 of 12 | 7 of 12 | 3 | 0 | 4.7 s | 0 of 4 | 4 of 4 |
+| llama3.2:3b, GPU | 12 of 12 | 7 of 12 | 4 | 0 | 1.1 s | 0 of 4 | 4 of 4 |
+| llama3.2:3b, CPU | 12 of 12 | 7 of 12 | 4 | 0 | 6.5 s | 0 of 4 | 4 of 4 |
+
+What this shows:
+- **The GPU works for models that fit in it.** The Ollama log shows full offload (37 of 37 and 29 of
+  29 layers, CUDA), and every plan was valid JSON. llama3 8B garbled on this GPU, and it does not fit
+  fully in 6 GB. So partial offload is the likely cause of the garbling. That is better supported now,
+  but still not proven.
+- **Neither small model is clearly a better planner.** Both match llama3's 7 of 12 on CPU. qwen2.5's
+  9 of 12 on GPU is one run at temperature 0.1, and the same model scored 7 on CPU, so treat the gap as
+  noise until it repeats.
+- Shared misses: both models call a tool for questions that only need documents (policy, chitchat),
+  both try the repository outside the allowlist, which the provider refuses, and both list PRs instead
+  of fetching the two named ones. qwen2.5 also lists PRs for "status of PR 42".
+- **Answers are weaker.** One qwen2.5 GPU answer was only `[S1]`, with no text. No invented citations
+  and no injection canary in any run.
+- About 1 s per plan on GPU against 12 s for llama3 on CPU in this eval. On the real app, planning for
+  llama3 is about 80 s on CPU, so the gap there should be larger. Not measured in the app.
+
+### App switched to qwen2.5:3b on GPU, first real mail question
+
+At the owner's request, `.env` now has `LLM_MODEL=qwen2.5:3b` and `OLLAMA_NUM_GPU` commented out. The
+owner asked "Summarize the emails I received this week that need a reply." Checked in the database.
+
+- **45.5 s** for the whole question, against 3 min 20 s for llama3 on CPU on 2026-11-17.
+- The planner chose `gmail.threads_search` with `is:unread newer_than:1w`. **Gmail accepts only d, m
+  and y**, so it matched nothing: 132 characters of output, against 11,864 the day before. The answer
+  was "I could not find this in the available sources. [S1]", which is true of the empty result, but
+  wrong about the mailbox.
+- **Fix:** `gmail_query` in `gmail_provider.py` rewrites `newer_than:Nw` and `older_than:Nw` as days
+  before calling Gmail, and the tool description names the valid units. The query Gmail ran is now in
+  the result and the model's text, since it can differ from the planned arguments. Tests: 5 unit cases
+  for the rewrite, 1 for the rendering, 1 integration test against the fake Gmail. Ruff, format and
+  mypy clean. `tests/integration/test_gmail.py` plus all unit tests: 223 passed (Windows). The full
+  suite and the Linux run were not repeated.
+- Also seen, not fixed: a "could not find" answer still carried a citation `[S1]` and was marked
+  `grounded`. Harmless here, but a not-found answer should not cite.
+
+- **Second ask, after the fix: denied, as designed.** Changing the tool description changed its
+  definition hash, so the gateway refused the call (`tool_definition_changed`, 3.5 ms) and marked
+  `gmail.threads_search` as `changed` and disabled, with the new definition pending review. The
+  answer said no source was found and generated nothing, which is honest. An admin must approve the
+  new definition on the Integrations screen before mail works again.
+
+- **Third ask, after the owner approved the new definition: search works, answer useless.** Same
+  plan (`is:unread newer_than:1w`), now sent to Gmail as `newer_than:7d`: 16,658 characters back in
+  1.6 s. The answer was only "Inference: [S1]", in 5.7 s for the whole question. The model cited
+  S2 to S5, which do not exist, and the validator removed them. Ollama's log shows the answering
+  prompt was 2,348 tokens, not truncated, and the model wrote about 20 tokens. So qwen2.5:3b plans
+  quickly but cannot write this answer. It matches the eval, where one qwen answer was only `[S1]`.
+
+- **Fourth ask, `llama3.2:3b` on GPU: 18.8 s, empty again.** It planned
+  `in:inbox newer_than:7d awaits:reply`. `awaits:reply` is not a Gmail operator. It echoes the tool
+  description's "awaits a reply", and Gmail searched it as text: 180 characters back, and the answer
+  was "I could not find this in the available sources."
+- **Second fix:** `gmail_query` now also drops operators Gmail does not document, and the result
+  says which terms were left out, under the query that ran. Reply state is computed by OpsAssist, so
+  dropping such a term loses nothing. The tool description is unchanged, so no re-approval was
+  needed. Tests: 12 unit cases for the query, 2 for the rendering, 2 integration tests. Ruff,
+  format, mypy clean. `tests/integration/test_gmail.py`: 43 passed (Windows). API restarted.
+
+- **Fifth ask, `llama3.2:3b` on GPU, with both fixes: first real answer from a small model, 14.8 s.**
+  Same plan with `awaits:reply`, dropped before the search. 10 threads came back (32,923 characters,
+  2.95 s). The answer listed 4: "You earned 4 points" as awaiting a reply, and three, including
+  "Graduate Student Life, Financial Support and More" and "DSAN prerequisite requirements", as
+  unclear because they came through a mailing list. Status `partially_grounded`, 5 sentences flagged
+  uncited, no invented citations. Problems: it opened with "You have 4 emails that need a reply"
+  although only 1 was marked yes, it numbered the last one "Conversation 10", and it mostly copied
+  the rendered lines. The other 6 threads were left out, as expected if they were automated or
+  answered. Not checked: who sent "You earned 4 points", and so whether the automated-sender check
+  should have caught it. The tool output is not stored, by design, so that needs the owner's mailbox.
+
+Not done: no repeated eval runs to measure variance. Raw eval results:
+`backend/evals/results/planner-*.json` (untracked; it holds the CPU run of each model).
+
 ## 2026-11-17: first real PR question answered end to end
 
 The owner asked "What pull requests are open in ShatanshAdhikari/opsassist?" in the browser, signed
@@ -324,7 +413,7 @@ Stacked on `feat/tool-layer`.
 
 - `credentials/`: envelope-encrypted secrets, key rotation (ADR-0011).
 - `integrations/`: connection lifecycle, GitHub App authentication, native read-only provider with
-  five tools. Access decision in ADR-0012, which needs the owner's agreement.
+  five tools. Access decision in ADR-0012, accepted by the owner 2026-11-18.
 - Migration `0003`: `integration_connections`, `stored_credentials`, GitHub as a tool server kind.
 - API under `/connections`. CLI: `generate-credential-key`, `rotate-credential-keys`.
 - Setup and revocation steps in `GITHUB_SETUP.md`.

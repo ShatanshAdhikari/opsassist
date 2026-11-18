@@ -138,3 +138,14 @@ def test_says_when_more_results_exist_and_when_none_matched() -> None:
     empty = render_search(_search([]))
     assert "Conversations returned: 0." in empty
     assert "No conversations matched this search." in empty
+
+
+def test_search_shows_the_query_gmail_ran() -> None:
+    text = render_search({"mailbox": "me@example.test", "query": "is:unread newer_than:7d"})
+    assert "Gmail search run: is:unread newer_than:7d" in text
+    assert "No conversations matched this search." in text
+
+
+def test_search_names_terms_left_out() -> None:
+    text = render_search({"mailbox": "me@example.test", "dropped_terms": ["awaits:reply"]})
+    assert "Left out because Gmail does not support them: awaits:reply" in text
