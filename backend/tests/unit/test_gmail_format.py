@@ -149,3 +149,18 @@ def test_search_shows_the_query_gmail_ran() -> None:
 def test_search_names_terms_left_out() -> None:
     text = render_search({"mailbox": "me@example.test", "dropped_terms": ["awaits:reply"]})
     assert "Left out because Gmail does not support them: awaits:reply" in text
+
+
+def test_reply_states_are_counted_for_the_model() -> None:
+    waiting = _thread([_message()])
+    listed = _thread(
+        [_message(mailing_list=True)], awaiting_reply=False, last_message_via_list=True
+    )
+    automated = _thread(
+        [_message(automated=True)], awaiting_reply=False, last_message_automated=True
+    )
+    text = render_search(_search([waiting, listed, automated, automated]))
+    assert (
+        "Of these, awaiting a reply: 1. Unclear, through a mailing list: 1. "
+        "Not awaiting a reply: 2." in text
+    )

@@ -66,6 +66,17 @@ def _reply_state(thread: dict[str, Any]) -> str:
     return "Awaiting a reply: no, the mailbox owner wrote last."
 
 
+def _reply_counts(threads: list[dict[str, Any]]) -> str:
+    """Count reply states in code, so a small model does not have to (llama3.2:3b miscounted)."""
+    states = [_reply_state(thread) for thread in threads]
+    yes = sum(state.startswith("Awaiting a reply: yes") for state in states)
+    unclear = sum(state.startswith("Awaiting a reply: unclear") for state in states)
+    return (
+        f"Of these, awaiting a reply: {yes}. Unclear, through a mailing list: {unclear}."
+        f" Not awaiting a reply: {len(states) - yes - unclear}."
+    )
+
+
 def render_search(data: dict[str, Any]) -> str:
     """Render the dict built by the threads_search tool. Expects already-redacted data."""
     threads = data.get("threads") or []
@@ -75,6 +86,8 @@ def render_search(data: dict[str, Any]) -> str:
     if data.get("dropped_terms"):
         terms = ", ".join(_flat(term) for term in data["dropped_terms"])
         lines.append(f"Left out because Gmail does not support them: {terms}")
+    if threads:
+        lines.append(_reply_counts(threads))
     if data.get("more_results_exist"):
         lines.append("More conversations match this search than are shown here.")
     for index, thread in enumerate(threads, start=1):

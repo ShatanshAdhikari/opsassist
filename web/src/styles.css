@@ -100,6 +100,8 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.88rem;
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
 .topbar-right select { width: auto; max-width: 220px; }
 .content { flex: 1; min-height: 0; overflow: auto; }
+.screen { height: 100%; }
+.screen[hidden] { display: none; }
 
 .assistant { height: 100%; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
 .assistant.with-panel { grid-template-columns: 240px minmax(0, 1fr) 380px; }

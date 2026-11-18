@@ -67,5 +67,18 @@ def validate_answer(raw_text: str, valid_markers: set[str]) -> ValidatedAnswer:
         removed_markers=tuple(dict.fromkeys(removed)),
         uncited_sentences=uncited,
         cited_sentences=cited,
-        says_not_found=NOT_FOUND_SENTINEL.lower() in text.lower() and not used,
+        says_not_found=_says_not_found(text, used),
     )
+
+
+def _says_not_found(text: str, used: set[str]) -> bool:
+    """The sentinel alone, even with citations attached, says nothing was found.
+
+    qwen2.5:3b answered "I could not find this in the available sources. [S1]" on 2026-11-18. A
+    citation on that sentence supports nothing, so it must not turn "not found" into an answer.
+    The sentinel followed by a cited claim is a real, partial answer.
+    """
+    if NOT_FOUND_SENTINEL.lower() not in text.lower():
+        return False
+    bare = " ".join(_MARKER.sub("", text).split()).lower()
+    return not used or bare == NOT_FOUND_SENTINEL.lower()
