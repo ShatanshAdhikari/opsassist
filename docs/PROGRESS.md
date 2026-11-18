@@ -2,6 +2,40 @@
 
 Records what was verified, not what was intended. Newest first.
 
+## 2026-11-18: Assistant screen fixes and answer-quality fixes
+
+The owner reported two screen problems and asked for the answer problems to be looked at.
+
+**Leaving the Assistant page seemed to stop questions.** It did not: the server finished every
+question. The database shows an answer for every question since the 2026-11-17 crash. The screen was
+the problem. Switching tabs unmounted the Assistant, which lost the "preparing an answer" state and
+the open conversation, and the answer that arrived was dropped. Fixes in `web/`:
+- The Assistant stays mounted, hidden, while another tab is open (`App.tsx`), so a question being
+  answered keeps its place, and the answer shows when the person comes back.
+- Opening a conversation whose last question has no answer yet, such as after a reload, says it is
+  still being answered and checks every 4 s. After 20 minutes it says no answer was recorded.
+  Asking again in that conversation is blocked while it waits, to avoid queued duplicates.
+- An answer that arrives after the person opened a different conversation no longer lands in that
+  one. The pending bubble follows its own conversation.
+
+**Enter did not send.** Enter-to-send has existed since Phase 2. Likely cause: clicking a suggestion
+filled the box but left focus on the suggestion button, so Enter pressed that button again. The
+owner used the suggestion each time. Clicking a suggestion now focuses the box. Not confirmed with
+the owner that this was their case.
+
+**Answer quality:**
+- The compact Gmail search now states the counts, "awaiting a reply: N, unclear: N, not awaiting: N",
+  computed in code, because llama3.2:3b said 4 needed a reply when 1 did.
+- An answer that is only the not-found sentence plus a citation now counts as not found, with no
+  citation. qwen2.5:3b wrote that on 2026-11-18, and it was marked `grounded`.
+- Not fixed: who sent "You earned 4 points", and whether the automated-sender check should have
+  caught it. That needs the sender's headers from the owner's mailbox.
+
+Tests: web 50 passed (6 new: Enter after a suggestion, Shift+Enter, waiting then answer, giving up,
+answer kept out of another conversation, answer kept across a tab switch), typecheck and lint clean.
+Backend unit tests 191 passed; `test_assistant.py`, `test_gmail.py`, `test_planner.py` and `tests/security`
+125 passed (Windows). Ruff, format and mypy clean. API restarted. Not yet tried in the browser.
+
 ## 2026-11-18: ADRs accepted, and two small free models tried on the planner eval
 
 **ADRs.** The owner accepted ADR-0001 to ADR-0014, including ADR-0012 with its limit. The follow-ups
