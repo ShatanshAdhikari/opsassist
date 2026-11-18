@@ -103,12 +103,18 @@ export function App() {
       <main className="content">
         {!workspace ? (
           <p className="center muted">You are not a member of any workspace. Ask an administrator to add you.</p>
-        ) : screen === "assistant" ? (
-          <Assistant key={workspace.id} workspaceId={workspace.id} />
-        ) : screen === "integrations" && workspace.role !== "viewer" ? (
-          <Integrations key={workspace.id} workspaceId={workspace.id} role={workspace.role} signInResult={signInResult} />
         ) : (
-          <Knowledge key={workspace.id} workspaceId={workspace.id} role={workspace.role} />
+          <>
+            {/* Hidden, not removed, on other tabs: a question being answered keeps its place and its answer. */}
+            <div className="screen" hidden={screen !== "assistant"}>
+              <Assistant key={workspace.id} workspaceId={workspace.id} />
+            </div>
+            {screen === "integrations" && workspace.role !== "viewer" ? (
+              <Integrations key={workspace.id} workspaceId={workspace.id} role={workspace.role} signInResult={signInResult} />
+            ) : screen !== "assistant" ? (
+              <Knowledge key={workspace.id} workspaceId={workspace.id} role={workspace.role} />
+            ) : null}
+          </>
         )}
       </main>
     </div>
